@@ -377,3 +377,12 @@ non mélangées, sans aucun message. L'outil scanne maintenant le vrai maillage 
 fichier et prévient clairement si un tel écart existe, avec le nombre de zones concernées,
 plutôt que de laisser découvrir le problème par hasard en relançant le fichier une deuxième fois
 (qui "marchait" par coïncidence, sans garantie que la teinte retrouvée soit la bonne).
+
+## 13/10/2026, build 11h15
+
+**Détail par couleur dans le rapport de couverture.** Jusqu'ici, "Vérifier la couverture du
+fichier..." ne donnait qu'un total ("X couleur(s) risquent d'être mal rendues"), impossible à
+vérifier sans deviner (Tomyn, sur un trio BEIGE/WHITE/BLACK proche des couleurs réelles d'un
+modèle : "2 sur 4 mal rendues, ton calcul doit être un peu trop agressif non ?"). Le rapport
+(popup et export .txt) liste maintenant les couleurs précises (code hex + écart Lab) qui posent
+souci, triées par écart décroissant, pour juger sur pièces plutôt que sur un chiffre seul.

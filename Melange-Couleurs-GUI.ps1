@@ -2490,12 +2490,20 @@ function Verifier-CouvertureFichier($chemin3mf, $trio) {
     $seuilEcart = 12.0
     $distances = New-Object System.Collections.Generic.List[double]
     $nombreMalCouvertes = 0
+    # 13/10/2026, Tomyn : "pourquoi 2 sur 4 et pas juste 1, ton calcul est trop agressif non ?" -
+    # jusqu'ici le resultat ne donnait qu'un total ("X couleur(s) mal rendue(s)"), impossible a
+    # verifier sans deviner. On garde maintenant le detail PAR couleur (hex + ecart Lab obtenu avec
+    # le meilleur dosage trouve), affiche dans le rapport ci-dessous - Tomyn peut voir directement
+    # QUELLES couleurs posent souci plutot que de devoir me croire sur parole.
+    $details = New-Object System.Collections.Generic.List[object]
     foreach ($hex in $couleurs) {
         try {
             $rgbCible = Obtenir-RGBDepuisHex $hex
             $meilleur = Trouver-MeilleurDosage $rgbCible $primairesRGB 10
             $distances.Add($meilleur.Distance)
-            if ($meilleur.Distance -gt $seuilEcart) { $nombreMalCouvertes++ }
+            $estMalRendue = $meilleur.Distance -gt $seuilEcart
+            if ($estMalRendue) { $nombreMalCouvertes++ }
+            [void]$details.Add(@{ Hex = $hex; Distance = $meilleur.Distance; MalRendue = $estMalRendue })
         } catch { }
     }
     if ($distances.Count -eq 0) { return $null }
@@ -2504,6 +2512,7 @@ function Verifier-CouvertureFichier($chemin3mf, $trio) {
         NombreMalCouvertes  = $nombreMalCouvertes
         EcartMoyen          = ($distances | Measure-Object -Average).Average
         EcartMax            = ($distances | Measure-Object -Maximum).Maximum
+        Details             = $details.ToArray()
     }
 }
 
@@ -2518,13 +2527,31 @@ function Obtenir-LignesRapportCouverture([string]$nomTrio, $resultat) {
     # loin (voir le bouton Comparer), ca donnerait un collage sans retours a la ligne au lieu d'un
     # rapport lisible.
     if (-not $resultat) { return ,@("$nomTrio : impossible de lire les couleurs de ce fichier.") }
-    return ,@(
-        "$nomTrio :"
-        "  $($resultat.NombreCouleurs) couleur(s) detectee(s) dans le fichier"
-        "  $($resultat.NombreMalCouvertes) couleur(s) risquent d'etre visiblement mal rendues"
-        "  Ecart Lab moyen : $([Math]::Round($resultat.EcartMoyen, 1))"
-        "  Ecart Lab max   : $([Math]::Round($resultat.EcartMax, 1))"
-    )
+    $lignes = New-Object System.Collections.Generic.List[string]
+    [void]$lignes.Add("$nomTrio :")
+    [void]$lignes.Add("  $($resultat.NombreCouleurs) couleur(s) detectee(s) dans le fichier")
+    [void]$lignes.Add("  $($resultat.NombreMalCouvertes) couleur(s) risquent d'etre visiblement mal rendues")
+    [void]$lignes.Add("  Ecart Lab moyen : $([Math]::Round($resultat.EcartMoyen, 1))")
+    [void]$lignes.Add("  Ecart Lab max   : $([Math]::Round($resultat.EcartMax, 1))")
+    # 13/10/2026, Tomyn : detail par couleur (quelle(s) couleur(s) exactement, et leur ecart), triee
+    # par ecart decroissant - les plus genantes en premier. Montre les "mal rendues" en entier, et
+    # garde une ligne recap pour celles qui passent le seuil sans toutes les detailler (pas d'interet
+    # a lister 50 bonnes couleurs par souci de couleurs).
+    if ($resultat.Details -and $resultat.Details.Count -gt 0) {
+        $detailsTries = @($resultat.Details | Sort-Object -Property Distance -Descending)
+        $malRendues = @($detailsTries | Where-Object { $_.MalRendue })
+        if ($malRendues.Count -gt 0) {
+            [void]$lignes.Add("  Couleur(s) a surveiller :")
+            foreach ($d in $malRendues) {
+                [void]$lignes.Add("    $($d.Hex)  (ecart Lab $([Math]::Round($d.Distance, 1)))")
+            }
+        }
+        $bienRendues = $detailsTries.Count - $malRendues.Count
+        if ($bienRendues -gt 0) {
+            [void]$lignes.Add("  (+ $bienRendues couleur(s) bien rendue(s), ecart Lab sous le seuil de 12)")
+        }
+    }
+    return ,$lignes.ToArray()
 }
 
 # Export du rapport de couverture dans un .txt a cote du fichier .3mf verifie (11/10/2026, Tomyn :
@@ -3622,7 +3649,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 11h00]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 11h15]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"
