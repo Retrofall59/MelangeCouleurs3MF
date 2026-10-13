@@ -386,3 +386,16 @@ vérifier sans deviner (Tomyn, sur un trio BEIGE/WHITE/BLACK proche des couleurs
 modèle : "2 sur 4 mal rendues, ton calcul doit être un peu trop agressif non ?"). Le rapport
 (popup et export .txt) liste maintenant les couleurs précises (code hex + écart Lab) qui posent
 souci, triées par écart décroissant, pour juger sur pièces plutôt que sur un chiffre seul.
+
+## 13/10/2026, build 11h25
+
+**Seuil de couverture plus tolérant pour les tons très sombres.** Grâce au détail ajouté
+ci-dessus, un cas concret est ressorti : un quasi-noir (#2A2424, légèrement chaud) marqué "mal
+rendu" à côté d'un trio contenant du noir (Tomyn : "noir chaud ou noir froid, c'est noir, y'a
+plus d'espoir"). L'écart Lab mesuré était géométriquement correct, mais l'œil distingue très mal
+une nuance de teinte quand la luminosité est déjà très basse. Plutôt que de relever le seuil
+général à l'aveugle (risque de aussi laisser passer de vrais écarts visibles sur des couleurs
+claires), le seuil de détection grimpe maintenant progressivement pour les couleurs cibles très
+sombres (L\* Lab < 25) : jusqu'à 32 pour du noir pur, dégressif jusqu'au seuil normal de 12 à
+L\*=25 et au-dessus. Le dosage réellement choisi pour le mélange, lui, reste calculé avec toute
+la précision Lab habituelle - seul le seuil d'AVERTISSEMENT change.

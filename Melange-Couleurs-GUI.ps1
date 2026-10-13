@@ -2495,15 +2495,29 @@ function Verifier-CouvertureFichier($chemin3mf, $trio) {
     # verifier sans deviner. On garde maintenant le detail PAR couleur (hex + ecart Lab obtenu avec
     # le meilleur dosage trouve), affiche dans le rapport ci-dessous - Tomyn peut voir directement
     # QUELLES couleurs posent souci plutot que de devoir me croire sur parole.
+    #
+    # 13/10/2026, suite - cas reel trouve grace au detail ci-dessus : #2A2424 (quasi-noir, teinte
+    # chaude) marque "mal rendu" (ecart 14.9) a cote d'un trio BEIGE/WHITE/BLACK - Tomyn : "noir
+    # chaud ou noir froid, c'est noir, y'a plus d'espoir". Il a raison : la distance Lab reste
+    # geometriquement exacte, mais l'oeil humain distingue tres mal une difference de TEINTE (a*/b*,
+    # chaud/froid) quand la LUMINOSITE (L*) est deja tres basse - une nuance qui saute aux yeux en
+    # plein jour sur un gris clair devient invisible sur un quasi-noir. On relache donc le seuil de
+    # detection (PAS le dosage choisi plus haut, qui reste le plus precis possible) pour les
+    # couleurs CIBLES tres sombres : en dessous de L*=25, le seuil augmente progressivement jusqu'a
+    # +20 a L*=0 (seuil effectif 32 pour du noir pur), degressif jusqu'a +0 a L*=25 ou le seuil
+    # normal de 12 s'applique entier.
     $details = New-Object System.Collections.Generic.List[object]
     foreach ($hex in $couleurs) {
         try {
             $rgbCible = Obtenir-RGBDepuisHex $hex
             $meilleur = Trouver-MeilleurDosage $rgbCible $primairesRGB 10
             $distances.Add($meilleur.Distance)
-            $estMalRendue = $meilleur.Distance -gt $seuilEcart
+            $labCible = Convertir-RGBVersLab $rgbCible.R $rgbCible.G $rgbCible.B
+            $seuilEffectif = $seuilEcart
+            if ($labCible.L -lt 25) { $seuilEffectif += (25 - $labCible.L) * 0.8 }
+            $estMalRendue = $meilleur.Distance -gt $seuilEffectif
             if ($estMalRendue) { $nombreMalCouvertes++ }
-            [void]$details.Add(@{ Hex = $hex; Distance = $meilleur.Distance; MalRendue = $estMalRendue })
+            [void]$details.Add(@{ Hex = $hex; Distance = $meilleur.Distance; MalRendue = $estMalRendue; SeuilApplique = $seuilEffectif })
         } catch { }
     }
     if ($distances.Count -eq 0) { return $null }
@@ -2543,12 +2557,17 @@ function Obtenir-LignesRapportCouverture([string]$nomTrio, $resultat) {
         if ($malRendues.Count -gt 0) {
             [void]$lignes.Add("  Couleur(s) a surveiller :")
             foreach ($d in $malRendues) {
-                [void]$lignes.Add("    $($d.Hex)  (ecart Lab $([Math]::Round($d.Distance, 1)))")
+                # 13/10/2026, Tomyn : le seuil applique varie pour les couleurs tres sombres (voir
+                # Verifier-CouvertureFichier) - affiche a cote de l'ecart quand il differe du seuil
+                # normal de 12, pour que ce soit visible sans avoir a deviner pourquoi une couleur
+                # presque noire a echappe au classement "a surveiller" malgre un ecart Lab eleve.
+                $mentionSeuil = if ($d.SeuilApplique -and [Math]::Round($d.SeuilApplique, 1) -ne 12.0) { " - seuil applique $([Math]::Round($d.SeuilApplique, 1)) (couleur tres sombre)" } else { "" }
+                [void]$lignes.Add("    $($d.Hex)  (ecart Lab $([Math]::Round($d.Distance, 1))$mentionSeuil)")
             }
         }
         $bienRendues = $detailsTries.Count - $malRendues.Count
         if ($bienRendues -gt 0) {
-            [void]$lignes.Add("  (+ $bienRendues couleur(s) bien rendue(s), ecart Lab sous le seuil de 12)")
+            [void]$lignes.Add("  (+ $bienRendues couleur(s) bien rendue(s), seuil 12 - plus haut pour les tons tres sombres)")
         }
     }
     return ,$lignes.ToArray()
@@ -3649,7 +3668,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 11h15]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 11h25]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"
