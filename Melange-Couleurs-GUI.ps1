@@ -2910,6 +2910,97 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         $nombreCouleursOrigine = $couleursOrigine.Count
         & $EcrireLigne "$nombreCouleursOrigine couleur(s) detectee(s)."
 
+        # 13/10/2026, Tomyn : "repasser le fichier deja melange une deuxieme fois dans l'outil, ca
+        # va mieux" - signe d'un vrai manque de detection, pas une impression. Certains fichiers
+        # (export Meshy/Bambu Studio) contiennent des zones peintes (paint_color sur le maillage) ou
+        # un extrudeur par defaut d'objet (key="extruder" dans model_settings.config) qui pointent
+        # vers un numero de couleur SUPERIEUR au nombre d'entrees de 'filament_colour' lu ci-dessus.
+        # Le remappage plus bas (voir $scriptDecalerEtatPaintColor) a une securite qui laisse alors
+        # ces zones totalement INTACTES ("etat hors de la plage connue") - elles ne sont donc jamais
+        # melangees, silencieusement, sans qu'aucun message ne le signale. On scanne ici le VRAI
+        # maillage (independamment de la liste 'filament_colour', qui peut etre incomplete/perimee)
+        # pour verifier si un numero plus grand existe reellement, et on avertit si c'est le cas -
+        # plutot que de laisser Tomyn le decouvrir par hasard en relancant le fichier deja melange
+        # une deuxieme fois. Ce contournement "marchait" par coincidence : le fichier de sortie a
+        # TOUJOURS plus d'entrees dans 'filament_colour' que son entree (3 primaires + N melanges),
+        # donc un numero qui depassait la plage la premiere fois peut y rentrer la deuxieme - mais
+        # sans aucune garantie que la couleur obtenue alors soit la bonne, puisque ce numero ne
+        # correspondait a rien de declare a l'origine (il tombe sur UNE DES couleurs deja melangees
+        # au premier passage, pas forcement la teinte voulue pour cette zone precise).
+        $scriptListerEtatsPaintColor = {
+            param([string]$texte)
+            $nibblesEntree = New-Object System.Collections.Generic.List[int]
+            for ($i = $texte.Length - 1; $i -ge 0; $i--) {
+                $nibblesEntree.Add([System.Convert]::ToInt32([string]$texte[$i], 16))
+            }
+            $position = 0
+            $etatsTrouves = New-Object System.Collections.Generic.List[int]
+            $pile = New-Object System.Collections.Generic.List[int]
+            while ($true) {
+                $code = $nibblesEntree[$position]; $position++
+                $cotesDivises = $code -band 0x3
+                $estDivise = $cotesDivises -ne 0
+                $nombreEnfants = 0
+                if ($estDivise) {
+                    $nombreEnfants = $cotesDivises + 1
+                } else {
+                    if (($code -band 0xC) -eq 0xC) {
+                        $n2 = $nibblesEntree[$position]; $position++
+                        if ($n2 -eq 0xF) {
+                            $n3 = $nibblesEntree[$position]; $position++
+                            $etat = $n3 + 18
+                        } else {
+                            $etat = $n2 + 3
+                        }
+                    } else {
+                        $etat = $code -shr 2
+                    }
+                    if ($etat -ne 0) { [void]$etatsTrouves.Add($etat) }
+                }
+                if ($pile.Count -eq 0) {
+                    if ($estDivise) { $pile.Add($nombreEnfants); continue } else { break }
+                }
+                if ($estDivise) {
+                    $pile.Add($nombreEnfants)
+                } else {
+                    $pile[$pile.Count - 1] = $pile[$pile.Count - 1] - 1
+                }
+                while ($pile.Count -gt 0 -and $pile[$pile.Count - 1] -eq 0) {
+                    $pile.RemoveAt($pile.Count - 1)
+                    if ($pile.Count -gt 0) { $pile[$pile.Count - 1] = $pile[$pile.Count - 1] - 1 }
+                }
+                if ($pile.Count -eq 0) { break }
+            }
+            return $etatsTrouves.ToArray()
+        }
+        $etatMaxReel = 0
+        $fichiersModelePourScan = @(Get-ChildItem -Path (Join-Path $dossierTemp "3D") -Recurse -Filter "*.model" -ErrorAction SilentlyContinue)
+        $cacheEtatsParCode = @{}
+        foreach ($fichierModelePourScan in $fichiersModelePourScan) {
+            $texteModelePourScan = [System.IO.File]::ReadAllText($fichierModelePourScan.FullName)
+            foreach ($m in [System.Text.RegularExpressions.Regex]::Matches($texteModelePourScan, 'paint_color="([0-9A-Fa-f]+)"')) {
+                $code = $m.Groups[1].Value
+                if (-not $cacheEtatsParCode.ContainsKey($code)) {
+                    try { $cacheEtatsParCode[$code] = & $scriptListerEtatsPaintColor $code } catch { $cacheEtatsParCode[$code] = @() }
+                }
+                foreach ($etat in $cacheEtatsParCode[$code]) {
+                    if ($etat -gt $etatMaxReel) { $etatMaxReel = $etat }
+                }
+            }
+        }
+        if (Test-Path $cheminParamsModele) {
+            $texteParamsPourScan = [System.IO.File]::ReadAllText($cheminParamsModele)
+            foreach ($m in [System.Text.RegularExpressions.Regex]::Matches($texteParamsPourScan, 'key="extruder" value="(\d+)"')) {
+                $valeur = [int]$m.Groups[1].Value
+                if ($valeur -gt $etatMaxReel) { $etatMaxReel = $valeur }
+            }
+        }
+        if ($etatMaxReel -gt $nombreCouleursOrigine) {
+            $nombreZonesOrphelines = $etatMaxReel - $nombreCouleursOrigine
+            & $EcrireLigne "ATTENTION : le maillage reference au moins $etatMaxReel couleur(s) alors que seulement $nombreCouleursOrigine sont listees dans ce fichier (filament_colour) - $nombreZonesOrphelines zone(s) peinte(s) ne correspondent a RIEN de declare et ne seront PAS melangees correctement sur ce passage. Pense a relancer le melange sur le fichier obtenu une deuxieme fois pour tenter de les rattraper (sans garantie que la teinte retrouvee alors soit la bonne)."
+            & $EcrireLigne ""
+        }
+
         # Nombre de melanges a produire (10/10/2026, demande par Tomyn ; plafond recalcule le
         # 11/10/2026 au passage de l'outil en mode trio) : jusqu'a 32 emplacements au total dans
         # l'AMS, 3 fixes pour les primaires -> maximum 29 melanges. Si on en demande moins que de
@@ -3531,7 +3622,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 10h00]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 11h00]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"

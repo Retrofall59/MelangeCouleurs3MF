@@ -365,3 +365,15 @@ Ajouter une couleur au stock puis relancer la suggestion pouvait ressortir une c
 enregistrée (prédéfinie ou perso) dans la liste des trios. La recherche de combinaisons compare
 maintenant chaque trio candidat (ensemble de ses 3 teintes, peu importe l'ordre) à tous les trios
 déjà existants, et ignore ceux qui correspondent exactement.
+
+## 13/10/2026, build 11h00
+
+**Avertissement si le mélange ne peut pas tout traiter** (13/10/2026, Tomyn : constaté en
+remarquant qu'un fichier déjà mélangé, repassé une deuxième fois dans l'outil, donnait un
+meilleur résultat). Certains fichiers (export Meshy/Bambu Studio) peuvent contenir des zones
+peintes sur le maillage, ou un objet entier, dont le numéro de couleur ne correspond à AUCUNE des
+couleurs listées dans le fichier (`filament_colour`) — ces zones restaient alors silencieusement
+non mélangées, sans aucun message. L'outil scanne maintenant le vrai maillage avant de traiter le
+fichier et prévient clairement si un tel écart existe, avec le nombre de zones concernées,
+plutôt que de laisser découvrir le problème par hasard en relançant le fichier une deuxième fois
+(qui "marchait" par coïncidence, sans garantie que la teinte retrouvée soit la bonne).
