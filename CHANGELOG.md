@@ -1,0 +1,359 @@
+# Changelog
+
+Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
+Terminologie ancienne conservée telle quelle dans les entrées ci-dessous : l'outil a démarré sur
+des "quatuors" de 4 primaires (CMYW/RYBW), avant de passer en "trios" de 3 primaires une fois
+vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le README pour l'état actuel.
+
+---
+
+Projet séparé de **Coloriser-STL** — pas de lien de code entre les deux, juste un enchaînement
+naturel dans le flux de travail (coloriser avec Meshy, *puis* passer le résultat dans cet outil
+avant de l'ouvrir dans Bambu Studio).
+
+## Le problème (10/10/2026, idée de Tomyn)
+
+Les couleurs que Meshy choisit (jusqu'à 16 par modèle) ne correspondent pas aux bobines que Tomyn a
+réellement. Jusqu'ici, il devait ouvrir Bambu Studio et utiliser sa fenêtre "Décomposer la
+couleur" **à la main, une fois par couleur**, pour trouver un dosage de ses filaments primaires qui
+s'en approche — long et pénible pour un modèle à plusieurs couleurs.
+
+## Ce que fait l'outil
+
+1. Tu lui donnes un `.3mf` colorisé (sortie de Coloriser-STL, ou n'importe quel projet Bambu Studio
+   avec des couleurs peintes dessus).
+2. Il te demande quel quatuor de primaires utiliser : **CMYW** (cyan/magenta/jaune/blanc) ou
+   **RYBW** (rouge/jaune/bleu/blanc) — les deux mêmes quatuors que propose Bambu Studio.
+3. Il calcule automatiquement le meilleur dosage pour **chacune** des couleurs détectées (ou pour
+   des groupes de couleurs proches, voir ci-dessous).
+4. Il ressort un `.3mf` où tout est déjà mélangé, prêt à ouvrir et trancher directement dans Bambu
+   Studio — plus besoin de repasser par la fenêtre de Bambu Studio à la main. L'explorateur Windows
+   s'ouvre directement sur le fichier créé, sélectionné — plus besoin d'aller le chercher à la main.
+
+## Nombre de mélanges réglable (10/10/2026, demandé par Tomyn)
+
+L'AMS (et le fichier Bambu Studio) a une limite de 32 emplacements de filament au total. 4 sont
+toujours réservés aux primaires, ce qui laisse **jusqu'à 28 mélanges**. Un sélecteur dans la
+fenêtre (pré-rempli automatiquement avec le nombre de couleurs détectées dans le fichier, plafonné
+à 28) permet de demander **moins** de mélanges que de couleurs détectées :
+
+- Si on demande autant de mélanges que de couleurs détectées (ou plus) : comportement d'origine,
+  un mélange par couleur.
+- Si on en demande moins : les couleurs les plus proches visuellement (distance Lab, la même
+  mesure que pour le choix du dosage) sont regroupées automatiquement et traitées comme un seul
+  mélange — son dosage est calculé sur leur moyenne. Plus on demande de mélanges, plus le résultat
+  est fidèle aux couleurs d'origine du modèle ; moins on en demande, plus certaines couleurs
+  voisines se retrouvent fondues ensemble. Le journal détaille toujours quelles couleurs ont été
+  regroupées dans quel mélange.
+- Le regroupement est déterministe (pas de hasard) : le même fichier avec le même nombre de
+  mélanges donne toujours exactement le même résultat.
+
+Vérifié ici (PowerShell 7, logique uniquement — pas de différence avec la vraie machine Windows
+sur cette partie, aucun `System.Drawing`/WinForms en jeu) : regroupement correct sur un jeu de
+couleurs synthétique (les paires quasi identiques se retrouvent bien dans le même groupe), et sur
+le vrai fichier de Tomyn réduit à 2 mélanges pour 6 couleurs détectées — fichier de sortie valide,
+`flush_volumes_matrix`, `filament_mixed_components/ratios`, `filament_self_index` et les codes
+`paint_color` du maillage tous corrects face à ce regroupement.
+
+## Aperçu avant / après (10/10/2026, demandé par Tomyn)
+
+La fenêtre affiche maintenant, à droite du journal, un aperçu en image fixe du modèle 3D (pas un vrai
+visualiseur 3D qu'on peut tourner à la souris - juste une image statique, demandé pour pouvoir juger
+d'un coup d'œil sans ouvrir Bambu Studio) :
+- **"Couleurs détectées"** dès qu'un fichier est choisi, avec les couleurs Meshy telles quelles.
+- **"Après mélange"** une fois le traitement terminé, avec les couleurs réellement obtenues par le
+  dosage calculé (pas les couleurs Meshy d'origine - le résultat visuel approximatif du mélange).
+
+Technique : projection isométrique maison (pas une vraie librairie 3D) + tri peintre (les triangles
+les plus loin dessinés en premier) + un ombrage simple selon l'orientation de chaque triangle, dessiné
+avec les outils de dessin standards de Windows (`System.Drawing`).
+
+**Partie non testée** : cette fonctionnalité a été développée et vérifiée ici sans machine Windows
+disponible - toute la partie "lecture du maillage et des couleurs" a été testée pour de vrai (avec
+PowerShell 7, sur le fichier de test de Tomyn, 199 000 triangles, couleurs correctement retrouvées
+aussi bien avant qu'après mélange), mais le dessin à l'écran lui-même (`System.Drawing`, qui n'existe
+que sous Windows) n'a **jamais pu être exécuté** avant l'envoi - contrairement au reste de l'outil. Si
+l'aperçu est vide, déformé, ou fait planter/ralentir la fenêtre, c'est la première chose à signaler.
+
+### Correctif du 10/10/2026 : "l'appli ne répond pas" sur le gros fichier
+
+Tomyn a signalé que la fenêtre se figeait ("ne répond pas", Windows) avec la version ci-dessus sur
+son gros fichier. Cause trouvée en comparant le calcul de l'aperçu à ce qui avait déjà fait grimper
+le mélange des couleurs à 2 minutes avant son propre correctif (voir plus bas) : le calcul de
+l'aperçu (lecture du maillage puis rendu de l'image) tournait **entièrement sur le thread de la
+fenêtre**, qui ne pouvait donc plus traiter aucun message (redessiner, déplacer, etc.) pendant tout
+ce temps - assez longtemps sur un gros maillage pour que Windows affiche "ne répond pas", même si le
+calcul se terminait tout seul au bout d'un moment.
+
+Deux correctifs combinés :
+1. **Calcul remis en arrière-plan.** L'aperçu tourne maintenant dans un second interpréteur
+   PowerShell (un "Runspace"), sur un autre thread, et la fenêtre reste utilisable pendant le
+   calcul - un petit minuteur vérifie régulièrement si c'est fini pour venir poser l'image une fois
+   prête.
+2. **Calcul lui-même accéléré.** Le code utilisait `Add-Member` et `Sort-Object` sur un objet par
+   triangle - deux opérations très coûteuses par élément en PowerShell sur un gros volume (déjà vu
+   avec le mélange des couleurs). Remplacé par des tableaux de nombres classiques et
+   `[System.Array]::Sort`. Vérifié ici avec PowerShell 7 : même résultat exact (zéro différence sur
+   3000 triangles de test), mais sur 150 000 triangles, **37 secondes → 1,3 seconde**. Sur le vrai
+   fichier de Tomyn (199 251 triangles), la lecture du fichier prend ~6,5 s et ce calcul ~1,8 s -
+   seul le dessin à l'écran (`System.Drawing`, non testable ici) n'a pas pu être chronométré, mais
+   il tourne maintenant en arrière-plan de toute façon, donc même s'il reste lent, il ne bloquera
+   plus la fenêtre.
+
+Toujours pas testé pour de vrai sous Windows (seule la partie calcul, sans le dessin, a pu être
+vérifiée ici) : si "ne répond pas" revient, ou si l'aperçu met plus d'une poignée de secondes à
+apparaître sans jamais arriver, c'est le prochain point à signaler.
+
+## Comment lancer
+
+Double-clic sur `Lancer-Melange-Couleurs.vbs` — même interface graphique (mêmes couleurs, même
+bannière, mêmes boutons) que Coloriser-STL, juste un autre projet : aucune fenêtre console ne
+s'affiche, tu choisis le fichier avec un bouton "Parcourir..." (ou glisser-déposer), le quatuor dans
+une liste déroulante, et tu cliques sur "Lancer le mélange". L'avancement s'affiche dans le journal
+de la fenêtre.
+
+## Comment ça marche côté technique
+
+Un `.3mf` de Bambu Studio est juste une archive zip avec du JSON dedans
+(`Metadata/project_settings.config`) et un fichier de maillage XML
+(`3D/3dmodel.model`). Tomyn a envoyé un exemple de fichier où il avait fait un mélange à la main
+dans Bambu Studio, ce qui a permis de retrouver le format exact utilisé pour stocker un mélange :
+- `filament_is_mixed`, `filament_mixed_components`, `filament_mixed_sublayer_ratios` dans
+  `project_settings.config` (quels filaments de base, et dans quelle proportion)
+- `paint_color="NC"` sur chaque triangle du maillage dans `3dmodel.model` (N = numéro du filament
+  utilisé à cet endroit)
+
+Le script ajoute les 4 primaires choisies comme nouveaux filaments (emplacements 1 à 4), et pour
+chaque couleur Meshy détectée crée un filament "mélangé" virtuel avec le dosage calculé
+(emplacements 5 et suivants). Il réécrit aussi tous les réglages "par filament" du projet (une
+centaine de champs au total : température, vitesse, etc.) pour la nouvelle liste de filaments, en
+dupliquant des valeurs raisonnables (du premier filament d'origine) plutôt que de deviner un par un
+ce que chaque champ signifie individuellement.
+
+## Grosse réserve à avoir en tête
+
+La formule utilisée pour calculer le dosage est une approximation maison (mélange en "lumière
+linéaire", comparaison perceptuelle dans l'espace Lab — la méthode la plus défendable sans données
+de calibration réelles des filaments), **pas** la formule de Bambu Studio. En comparant plusieurs
+captures d'écran envoyées par Tomyn (même couleur cible, décomposée par Bambu Studio en CMYW et en
+RYBW), aucune formule RGB simple testée ne retombe sur ce que Bambu Studio affiche comme résultat —
+Bambu Studio se base très probablement sur des données de calibration physique de ses filaments,
+qu'on n'a pas. Donc le dosage calculé ici peut être différent de celui de Bambu Studio, sans qu'on
+sache lequel des deux est le plus fidèle à la réalité imprimée.
+
+**Testé pour de vrai le 10/10/2026** (PowerShell 7 installé spécialement pour l'occasion, faute
+d'accès à un Windows ici) sur le fichier de test de Tomyn, après trois aller-retours sur des bugs
+remontés par ses propres essais sur sa machine :
+- `filament_colour_type` (et les autres champs ajoutés au fichier) provoquaient une erreur
+  PowerShell ("propriété introuvable") quand ce champ n'existait pas déjà dans le `.3mf` d'origine —
+  corrigé en créant la propriété si besoin, ou en l'écrivant normalement si elle existe déjà.
+- Le `.3mf` généré s'ouvrait avec une erreur Bambu Studio ("le fichier ne contient pas de données
+  géométriques"). Deux causes cumulées : (1) le zip était reconstruit avec des antislashs dans les
+  noms d'entrée (`3D\3dmodel.model` au lieu de `3D/3dmodel.model`) à cause d'un comportement de
+  .NET Framework sur Windows, invalide pour le format ZIP/3MF — corrigé en reconstruisant le zip
+  entrée par entrée avec des slashs forcés ; (2) le maillage et les `paint_color` n'étaient pas
+  forcément dans `3D/3dmodel.model` mais dans un fichier séparé sous `3D/Objects/` (Bambu Studio
+  éclate souvent chaque objet dans son propre fichier) — l'ancienne version ne regardait que
+  `3dmodel.model` et ne remappait donc rien du tout sur ce genre de fichier ; corrigé en parcourant
+  tous les `.model` sous `3D/`.
+- Bambu Studio plantait ensuite avec "Out of Memory" à l'ouverture, **à deux reprises** (deux
+  correctifs insuffisants avant de trouver la vraie cause). Confirmé en installant PowerShell 7 ici
+  (faute de Windows) et en rejouant le script sur le vrai fichier de Tomyn pour comparer :
+  **n'importe quel champ tableau réaffecté par le script** (pas seulement ceux qu'on ajoute — même
+  ceux dupliqués par la boucle générique, déjà présents dans le fichier d'origine) ressortait, sur
+  Windows PowerShell 5.1 uniquement, en JSON sous la forme `{"value":[...], "Count":N}` au lieu d'un
+  tableau tout simple — un bug de `ConvertTo-Json` propre à cette version (le même code rejoué sur
+  PowerShell 7 produit un tableau correct). Bambu Studio lisait cette structure malformée de travers
+  et partait sur une allocation mémoire démesurée. Plutôt que de chercher un énième contournement de
+  `ConvertTo-Json`, le script ne l'utilise plus du tout pour réécrire le fichier : il modifie
+  directement le texte JSON d'origine (recherche/remplacement ciblé, un champ à la fois), donc tout
+  le reste du fichier (~500 autres réglages) reste identique à l'original au caractère près. Au
+  passage, deux pièges à éviter avec cette méthode (trouvés en testant, pas par chance) : il faut
+  rééchapper les caractères spéciaux (retour à la ligne, etc.) des valeurs relues depuis le JSON
+  avant de les réécrire — un champ comme le G-code de début de filament en contient — et le motif de
+  recherche doit reconnaître correctement une suite de chaînes entre guillemets plutôt que de
+  s'arrêter au premier crochet `[`/`]` rencontré, ce même G-code contenant des crochets dans son
+  texte (`bed_temperature[current_extruder]`).
+
+Avec ce fichier-là corrigé, Bambu Studio plantait encore, mais cette fois sans aucun message
+d'erreur (plantage silencieux). Cause trouvée en comparant les valeurs du fichier de Tomyn à ce
+qu'elles auraient dû être : `filament_mixed_sublayer_ratios` contenait des **virgules à la place des
+points décimaux** (`"0,3000,0,1500,0,5500,0,0000"` au lieu de `"0.3000,0.1500,0.5500,0.0000"`) — 4
+ratios valides transformés en 8 fragments illisibles pour Bambu Studio. En cause : le formatage
+`"{0:0.0000}" -f (...)` utilise par défaut la langue régionale de Windows pour le séparateur
+décimal, et la machine de Tomyn est configurée en français. Confirmé en forçant PowerShell 7 (ici)
+en culture française : le même bug se reproduit à l'identique, et disparaît en forçant une culture
+"invariante" (point décimal, indépendant de la langue de Windows) pour cette conversion précise -
+c'est ce que fait maintenant le script, peu importe la langue régionale de la machine qui l'exécute.
+
+Avec ce fichier-là aussi corrigé, Bambu Studio replantait en "Out of Memory" — mais cette fois la
+vraie cause s'est trouvée dans le fichier de test de Tomyn lui-même : il contenait, sans qu'on le
+sache au début, un **vrai mélange fait par Tomyn à la main dans Bambu Studio** (3 primaires sur un
+quatuor de 4, le 4e - le blanc - à 0%). Comparer ce que Bambu Studio avait lui-même écrit pour ce
+mélange a révélé la dernière différence : Bambu Studio enregistre `filament_mixed_components` et
+`filament_mixed_sublayer_ratios` avec **seulement les primaires réellement utilisées** (ex. `"1,2,3"`
+et `"0.2000,0.4500,0.3500"`, 3 valeurs chacun) - jamais une primaire à 0%. Le script, lui, écrivait
+systématiquement les 4 primaires du quatuor, y compris celles à 0% (ex. `"1,2,3,4"` avec un 4e ratio
+à `"0.0000"`) - un format que Bambu Studio n'écrit jamais lui-même, très probablement responsable du
+plantage (une longueur de tableau inattendue peut facilement déclencher une mauvaise allocation
+mémoire côté C++, d'où l'écran "Out of Memory"). Corrigé : seules les primaires avec un dosage non
+nul sont désormais écrites, exactement comme le fait Bambu Studio.
+
+Vérifié de bout en bout, **y compris en forçant la culture française pour reproduire exactement les
+conditions de la machine de Tomyn**, sur son fichier de test (6 couleurs Meshy, maillage dans
+`3D/Objects/object_1.model`, ~199 000 triangles peints, 103 réglages par filament) : zip valide
+(bons slashs), maillage correctement remappé, JSON de configuration valide avec des points décimaux
+partout où il faut et des listes de primaires au même format que celles de Bambu Studio lui-même,
+sans doublon de champ, sans aucun champ corrompu, et le reste du fichier identique octet pour octet
+à l'original. Reste à confirmer que Bambu Studio l'ouvre et tranche correctement sur sa machine —
+c'est le test qui compte vraiment, celui-ci n'a jamais pu être fait ici faute de Bambu Studio
+disponible.
+
+**Encore un "Out of Memory" après tout ça (10/10/2026)**, cette fois sur le vrai fichier de Tomyn
+(199 000 triangles, acheté sur un pack - **pas** un fichier simplifié par lui, et le `.3mf` d'origine
+s'ouvre très bien dans Bambu Studio à cette même taille, donc la taille du fichier n'était pas la
+cause). En comparant les couleurs détectées dans son fichier : 3 des 6 couleurs Meshy correspondaient
+déjà à 100% à l'une des 4 primaires choisies (écart Lab de 0.0 - correspondance exacte). Le script
+créait quand même, pour ces 3 couleurs, un filament "mélangé" virtuel avec... un seul ingrédient à
+100% (`filament_is_mixed="1"`, un seul composant, un seul ratio "1.0000") - une forme que Bambu
+Studio ne produit jamais lui-même (un "mélange" à un seul ingrédient n'est juste pas un mélange).
+Ça créait aussi deux filaments avec exactement la même couleur hexadécimale dans la liste
+(la primaire, et son double "mélangé"). Corrigé : quand le dosage calculé ne retient qu'une seule
+primaire (0 ou 1 composant non nul), le filament correspondant est maintenant écrit comme un
+filament normal, non mélangé (`filament_is_mixed="0"`, composants et ratios vides) - exactement le
+même format qu'une primaire ordinaire. Revérifié de bout en bout (zip, XML, JSON, décimales, pas de
+doublon de champ) sur le vrai fichier de Tomyn, culture française forcée incluse : les 3 couleurs à
+correspondance exacte sortent maintenant bien en filament simple, les 3 autres couleurs (vrais
+mélanges à 2 ou 3 primaires) sortent toujours avec leurs composants/ratios corrects.
+
+**Nouveau plantage silencieux signalé (10/10/2026), cette fois sur un autre modèle ("ninja")**, avec
+un fichier généré bien plus court que la normale (2,5 Ko au lieu de plusieurs dizaines de Ko). En
+comparant systématiquement la taille de CHAQUE champ tableau du fichier d'origine à un multiple exact
+du nombre de couleurs Meshy détectées (plutôt que d'attendre un nouveau message d'erreur précis, qui
+ne venait pas), deux familles de champs se sont révélées mal gérées :
+
+- **`flush_volumes_matrix`** : ce n'est pas un simple réglage "par filament" mais une vraie matrice
+  (volume de purge entre chaque PAIRE de filaments), de taille (nombre de filaments)². Le script ne
+  la touchait pas du tout - elle restait à sa taille d'origine (ex. 36 = 6×6 pour 6 couleurs) alors
+  que le fichier final en compte 10 (devrait être 100 = 10×10). Bambu Studio indexe cette matrice
+  directement avec le numéro de filament : une matrice trop petite veut dire une lecture en dehors du
+  tableau côté C++ - très probablement la vraie cause de tous les plantages "Out of Memory" précédents,
+  avant même d'arriver aux autres champs. Corrigé : la matrice est maintenant reconstruite à la bonne
+  taille, les cases entre deux couleurs d'origine gardant leur valeur calibrée exacte, les cases
+  touchant une nouvelle primaire recevant la valeur la plus fréquente hors diagonale de la matrice
+  d'origine (la valeur "par défaut" que Bambu Studio lui-même utilise entre deux filaments sans
+  calibration particulière).
+- **~49 autres réglages "par filament"** (vitesses de retrait, températures, etc.) stockent en réalité
+  **plusieurs valeurs consécutives par filament** (le plus souvent 2, parfois 4) et non une seule -
+  leur longueur ne tombait donc jamais exactement sur le nombre de couleurs détectées, et la boucle
+  d'extension (qui ne cherchait que les tableaux de longueur exactement égale à ce nombre) les
+  ignorait complètement, les laissant eux aussi trop courts pour le nouveau total de filaments. Corrigé
+  avec la même logique que les champs simples, mais bloc par bloc.
+- Cas particulier dans ce deuxième groupe : **`filament_self_index`**, qui ne stocke pas une propriété
+  du filament mais son PROPRE numéro. Le dupliquer comme les autres aurait donné des numéros faux (les
+  nouvelles primaires auraient toutes porté le numéro 1, et les couleurs d'origine auraient gardé leur
+  ancien numéro au lieu de leur nouvelle place). Corrigé en le recalculant entièrement à partir de la
+  nouvelle position de chaque filament.
+
+Revérifié de bout en bout sur le vrai fichier de test de Tomyn (toujours zip valide, maillage XML
+valide, JSON sans doublon ni champ corrompu, décimales à points partout, matrice de purge et champs
+"par bloc" maintenant à la bonne taille, numérotation `filament_self_index` correcte).
+
+**Trouvé LE vrai bug (10/10/2026)**, très probablement la cause de TOUS les plantages silencieux
+depuis le début, en comparant un fichier généré par ce script à deux fichiers où Tomyn a refait le
+même mélange **à la main dans Bambu Studio** (une fois en RYBW, une fois en CMYW, mêmes couleurs
+Meshy) - une comparaison bien plus parlante que n'importe quel message d'erreur.
+
+L'attribut `paint_color` du maillage n'est **pas un numéro de filament écrit en décimal**, contrairement
+à ce que tout le reste de ce document a supposé jusqu'ici. C'est un format propre à PrusaSlicer/Bambu
+Studio pour la "peinture multi-matière" : une chaîne de chiffres hexadécimaux qui encode, bit par bit,
+un petit arbre - *"ce triangle est-il subdivisé (pour un dégradé de couleur sur son bord), et si oui en
+combien de sous-triangles, sinon quel est son numéro de filament"* - rangé à l'envers (le dernier
+caractère de la chaîne est lu en premier). Le script ajoutait 4 au nombre décimal trouvé en tête de la
+chaîne - ce qui tombait juste par **pur hasard** pour certaines couleurs et cassait complètement les
+autres. Exemple concret trouvé en comparant : la valeur `"8"` (qui encode en réalité le filament n°2)
+devenait `"12"` après le décalage naïf - un code qui ne veut rien dire dans ce format (il dit "ce
+triangle est divisé en 3 sous-triangles" sans fournir les données de ces 3 sous-triangles). Avec des
+milliers de triangles corrompus de cette façon d'un coup à chaque fichier, c'est très probablement la
+vraie explication de tous les "Out of Memory" et plantages silencieux précédents, malgré tous les
+correctifs déjà faits sur la configuration JSON.
+
+Corrigé en décodant vraiment ce petit arbre (même algorithme que celui utilisé par Bambu Studio/
+PrusaSlicer, retrouvé dans leur code source), en décalant uniquement les numéros de filament qu'il
+contient - jamais sa structure de subdivision - puis en le réencodant à l'identique. Vérifié caractère
+par caractère contre les deux fichiers où Tomyn a fait le même mélange à la main (RYBW et CMYW, mêmes
+4 couleurs Meshy, mêmes résultats dans les deux cas), et sur la totalité des 199 000+ triangles de son
+fichier de test (un passage sans aucun décalage redonne exactement la chaîne de départ, partout, aucune
+anomalie).
+
+Revers de la médaille signalé par Tomyn au premier essai : ce décodage correct est bien plus lent que
+le simple remplacement de texte d'avant - environ 2 minutes sur son fichier de 199 000 triangles.
+Cause : le script décodait/réencodait CHAQUE triangle individuellement, alors qu'un maillage peint n'a
+en pratique que 3 ou 4 codes `paint_color` *différents* au total (chaque zone d'une même couleur
+partage le même code, même répété sur des centaines de milliers de triangles). Corrigé en ne calculant
+le résultat qu'une fois par code réellement différent rencontré, et en réutilisant ce résultat pour
+toutes les répétitions suivantes (un simple cache) : même fichier de test, même résultat caractère
+pour caractère, mais **5 secondes au lieu de 2 minutes**.
+
+**À faire avant de faire confiance au résultat** : tester d'abord sur un petit fichier simple,
+vérifier que ça s'ouvre bien dans Bambu Studio sans erreur, et idéalement confirmer par une
+impression test avant de lancer un mélange sur un gros modèle.
+
+## Couleurs primaires utilisées (à corriger si besoin)
+
+Récupérées par échantillonnage des captures d'écran de la fenêtre "Décomposer la couleur" de Bambu
+Studio envoyées par Tomyn, recoupées avec les couleurs trouvées dans son fichier de test `.3mf` :
+
+| Couleur | Hex |
+|---|---|
+| Cyan | `#0086D6` |
+| Magenta | `#EC008C` |
+| Jaune | `#F4EE2A` |
+| Rouge | `#C12E1F` |
+| Bleu | `#0A2989` |
+| Blanc | `#FFFFFF` (supposé pur — à corriger si la bobine blanche réelle est teintée) |
+
+## 11/10/2026 au 13/10/2026 : passage aux trios + grosse série de fonctionnalités
+
+**Bascule "quatuor" (4 primaires) -> "trio" (3 primaires)** : vérifié directement dans Bambu
+Studio que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — toute la logique de dosage et les
+primaires prédéfinies (devenues Pastel/Néon) sont passées en trios pour coller à cette vraie
+limite.
+
+**Corrigé un bug d'affichage récurrent** sur plusieurs fenêtres secondaires ("Trios suggérés
+depuis mes couleurs" notamment) qui n'affichaient qu'une partie de leur contenu quel que soit le
+contrôle WinForms utilisé — cause : usage de `Dock`/redimensionnement automatique sur des popups,
+remplacé par un layout entièrement figé (`FormBorderStyle = FixedDialog`, `ClientSize` et
+`Location`/`Size` fixes sur chaque contrôle), calqué sur la fenêtre "Gérer mes couleurs" qui
+n'avait jamais eu ce problème.
+
+**Stock de couleurs personnel + suggestion de trios** : nouvelle fenêtre "Gérer mes couleurs"
+(liste de couleurs indépendante des trios), et "Suggérer des trios depuis mes couleurs" qui teste
+toutes les combinaisons de 3 couleurs du stock et propose les meilleures par couverture Lab sur le
+fichier choisi.
+
+**Petite série de fonctionnalités ajoutées au fil des demandes, chacune validée avant d'être
+codée :**
+- Pastilles de couleur + marqueur favori dans le menu déroulant des trios
+- Avertissement si une couleur ajoutée/modifiée est quasi-identique à une déjà en stock (distance
+  Lab)
+- Mémorisation du dernier fichier `.3mf` utilisé, rechargé seul au démarrage
+- Suppression en cascade : supprimer une couleur supprime les trios personnalisés qui s'en
+  servaient
+- Sélection multiple (Ctrl/Shift-clic, "Tout sélectionner", touche Suppr) dans "Gérer mes
+  couleurs", "Gérer mes trios" et "Suggérer des trios depuis mes couleurs"
+- Rappel "déjà mélangé le [date] avec le trio [nom]" basé sur l'historique, affiché à côté de
+  "Lancer le mélange"
+- Trios favoris (étoile), remontés en haut du menu déroulant
+- Bouton "Ouvrir le dossier contenant" à côté du fichier `.3mf` sélectionné
+- Vérification automatique de la couverture du fichier **avant** de lancer un mélange pour de vrai
+  (pas seulement via le contrôle à la demande existant), avec confirmation si le trio choisi rend
+  mal certaines couleurs
+- "Annuler la dernière suppression" (couleur ou trio), un seul niveau
+- Compteur "utilisé X fois" par trio dans "Gérer mes trios", basé sur l'historique des lots
+
+Vérifié à chaque étape par analyse syntaxique PowerShell (AST) et, pour la logique non triviale
+(détection de quasi-doublon, suppression en cascade, ordre favoris/récents), par des scripts de
+test isolés avant application au fichier principal. Jamais testé sur une vraie machine Windows
+pendant cette série — comme pour les étapes précédentes, le premier retour réel reste à confirmer
+par Tomyn.

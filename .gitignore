@@ -1,0 +1,13 @@
+# Donnees personnelles generees automatiquement a cote du script au premier usage - jamais
+# versionnees (couleurs/trios perso, favoris, dernier fichier utilise, historique des lots).
+couleurs-personnalisees.json
+trios-personnalises.json
+trios-favoris.json
+trios-recents.json
+dernier-fichier.json
+dernier-trio.json
+historique-lots.log
+
+# Rapports de couverture exportes a la demande, et resultats de test generes a cote d'un .3mf.
+*_couverture_*.txt
+*_melange.3mf
