@@ -357,3 +357,11 @@ Vérifié à chaque étape par analyse syntaxique PowerShell (AST) et, pour la l
 test isolés avant application au fichier principal. Jamais testé sur une vraie machine Windows
 pendant cette série — comme pour les étapes précédentes, le premier retour réel reste à confirmer
 par Tomyn.
+
+## 13/10/2026, build 10h00
+
+**"Suggérer des trios depuis mes couleurs" ne reproposait pas les trios déjà sauvegardés.**
+Ajouter une couleur au stock puis relancer la suggestion pouvait ressortir une combinaison déjà
+enregistrée (prédéfinie ou perso) dans la liste des trios. La recherche de combinaisons compare
+maintenant chaque trio candidat (ensemble de ses 3 teintes, peu importe l'ordre) à tous les trios
+déjà existants, et ignore ceux qui correspondent exactement.

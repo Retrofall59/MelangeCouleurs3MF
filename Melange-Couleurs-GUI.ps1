@@ -2084,10 +2084,24 @@ function Obtenir-MeilleuresCombosDepuisCouleurs([array]$couleurs, [int]$topN) {
     }
     $tries = @($resultats | Sort-Object -Property Aire -Descending)
 
+    # 13/10/2026, Tomyn : "si je rajoute une couleur et qu'ensuite je clique sur suggerer des
+    # trios de mes couleurs il faut pas qu'il me repropose les trios deja sauvegardes dans la
+    # liste" - un trio deja present dans $TRIOS (predefini ou personnalise) n'a aucun interet a
+    # etre re-suggere ici. Comparaison par ENSEMBLE de teintes (les 3 Hex, tries, insensibles a
+    # la casse) plutot que par nom, pour reconnaitre la meme combinaison meme dans un ordre
+    # different.
+    $ensemblesTriosExistants = New-Object System.Collections.Generic.List[string]
+    foreach ($nomTrio in $TRIOS.Keys) {
+        $hexTrio = @($TRIOS[$nomTrio] | ForEach-Object { $_.Hex.ToUpperInvariant() } | Sort-Object)
+        [void]$ensemblesTriosExistants.Add(($hexTrio -join "|"))
+    }
+
     $choisis = New-Object System.Collections.Generic.List[object]
     $blancDejaChoisi = $false
     foreach ($candidat in $tries) {
         if ($topN -gt 0 -and $choisis.Count -ge $topN) { break }
+        $hexCombo = @($candidat.Composants | ForEach-Object { $_.Hex.ToUpperInvariant() } | Sort-Object)
+        if ($ensemblesTriosExistants -contains ($hexCombo -join "|")) { continue }
         $estBlanc = Obtenir-TrioEstBlancDominant $candidat.Composants
         if ($estBlanc -and $blancDejaChoisi) { continue }
         [void]$choisis.Add($candidat)
@@ -3517,7 +3531,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 02h00]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 10h00]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"
