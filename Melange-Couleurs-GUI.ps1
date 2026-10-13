@@ -3447,8 +3447,34 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # fois par code DISTINCT rencontre, et on reutilise le resultat deja calcule pour
             # toutes les repetitions suivantes de ce meme code.
             $cacheDecalage = @{}
+            # 13/10/2026, Tomyn : fichier de plus d'1 million de triangles, 10 minutes d'attente sur
+            # cette seule etape SANS AUCUN message entre le debut et la fin - ca ressemble a un
+            # blocage meme quand ca travaille vraiment (Regex.Replace ne donne aucun callback de
+            # progression natif). Compteur de triangles traites ($etatCompteur, table mutee par
+            # reference - meme principe que $etatsOrphelinsTrouves plus haut), avec un message tous
+            # les 200 000 triangles pour prouver que ca avance, sans spammer le journal sur un petit
+            # fichier (200 000 passages dans l'evaluateur = quelques dixiemes de seconde, cout
+            # negligeable).
+            # 13/10/2026 (suite), Tomyn : avec un fichier de plus d'1 million de triangles, Windows a
+            # carrement affiche "Ne repond pas" sur la fenetre pendant l'attente, meme APRES l'ajout
+            # du message de progression ci-dessus. Raison : & $EcrireLigne -> Ecrire-Journal fait deja
+            # un DoEvents() a chaque appel, mais vu que le message ne sort que tous les 200 000
+            # triangles, Windows ne voit la fenetre repondre que toutes les 2-3 minutes sur ce fichier
+            # - largement au-dela des ~5 secondes que Windows tolere avant de marquer "Ne repond pas".
+            # Donc deux compteurs separes maintenant : un DoEvents() direct et frequent (sans passer
+            # par un message de journal, pour ne pas spammer) pour que la fenetre reste repondante en
+            # continu, et le message de progression toujours tous les 200 000 triangles pour prouver
+            # que ca avance sans noyer le journal.
+            $etatCompteur = @{ N = 0 }
             $evaluateur = [System.Text.RegularExpressions.MatchEvaluator]{
                 param($m)
+                $etatCompteur.N++
+                if ($etatCompteur.N % 2000 -eq 0) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                if ($etatCompteur.N % 200000 -eq 0) {
+                    & $EcrireLigne "  ... $($etatCompteur.N) triangle(s) traite(s), ca travaille toujours..."
+                }
                 $valeurOrigine = $m.Groups[1].Value
                 if (-not $cacheDecalage.ContainsKey($valeurOrigine)) {
                     $cacheDecalage[$valeurOrigine] = & $scriptDecalerEtatPaintColor $valeurOrigine $groupeDe $etatsOrphelinsTrouves
@@ -3611,7 +3637,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 11h35]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 11h50]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"

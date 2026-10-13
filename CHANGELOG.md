@@ -410,3 +410,19 @@ ce qui donnait l'impression d'un blocage (signalé par Tomyn : 5 minutes d'atten
 couleur(s) detectee(s)." sans suite). Le suivi des zones orphelines se fait maintenant PENDANT
 le remappage déjà existant (un seul passage, coût additionnel quasi nul) au lieu d'un scan à
 part - le message d'avertissement s'affiche toujours, mais sans ralentir le traitement.
+
+## 13/10/2026, build 11h50
+
+**Fix : la fenêtre passait "Ne répond pas" (Windows) sur un gros fichier, même après le build
+11h35.** Sur un fichier de plus d'1 million de triangles, Tomyn a vu Windows marquer la fenêtre
+"Ne répond pas" pendant 15 minutes à l'étape "Remappage des couleurs sur le maillage". Le build
+11h35 avait bien ajouté un message de progression tous les 200 000 triangles, mais ce message
+(et le `DoEvents()` qui va avec, nécessaire pour que Windows considère la fenêtre comme
+réactive) ne sortait donc, lui aussi, que tous les 200 000 triangles - soit toutes les 2 à 3
+minutes sur ce fichier, bien au-delà des ~5 secondes que Windows tolère avant d'afficher "Ne
+répond pas". Un `DoEvents()` séparé, indépendant du message de journal, est maintenant appelé
+tous les 2 000 triangles (sans rien afficher, pour ne pas spammer le journal) : la fenêtre reste
+réactive en continu, le message de progression ne change pas de fréquence. Ça ne réduit PAS le
+temps de calcul en lui-même (toujours proportionnel au nombre de triangles) - seulement
+l'impression de blocage. Non testé en conditions réelles sur un fichier d'1 million de
+triangles (pas de fichier de cette taille disponible ici).
