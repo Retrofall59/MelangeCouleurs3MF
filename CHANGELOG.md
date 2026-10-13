@@ -399,3 +399,14 @@ claires), le seuil de détection grimpe maintenant progressivement pour les coul
 sombres (L\* Lab < 25) : jusqu'à 32 pour du noir pur, dégressif jusqu'au seuil normal de 12 à
 L\*=25 et au-dessus. Le dosage réellement choisi pour le mélange, lui, reste calculé avec toute
 la précision Lab habituelle - seul le seuil d'AVERTISSEMENT change.
+
+## 13/10/2026, build 11h35
+
+**Fix urgent : le vrai mélange semblait bloqué plusieurs minutes.** Le scan ajouté au build
+11h00 (avertissement sur les couleurs orphelines) relisait et redécodait TOUT le maillage dans
+un passage séparé, EN PLUS du remappage normal, sans rien afficher à l'écran pendant ce temps -
+sur un fichier avec beaucoup de triangles, ça doublait le temps de traitement en silence total,
+ce qui donnait l'impression d'un blocage (signalé par Tomyn : 5 minutes d'attente sur "4
+couleur(s) detectee(s)." sans suite). Le suivi des zones orphelines se fait maintenant PENDANT
+le remappage déjà existant (un seul passage, coût additionnel quasi nul) au lieu d'un scan à
+part - le message d'avertissement s'affiche toujours, mais sans ralentir le traitement.

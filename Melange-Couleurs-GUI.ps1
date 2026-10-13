@@ -2963,89 +2963,13 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         # vers un numero de couleur SUPERIEUR au nombre d'entrees de 'filament_colour' lu ci-dessus.
         # Le remappage plus bas (voir $scriptDecalerEtatPaintColor) a une securite qui laisse alors
         # ces zones totalement INTACTES ("etat hors de la plage connue") - elles ne sont donc jamais
-        # melangees, silencieusement, sans qu'aucun message ne le signale. On scanne ici le VRAI
-        # maillage (independamment de la liste 'filament_colour', qui peut etre incomplete/perimee)
-        # pour verifier si un numero plus grand existe reellement, et on avertit si c'est le cas -
-        # plutot que de laisser Tomyn le decouvrir par hasard en relancant le fichier deja melange
-        # une deuxieme fois. Ce contournement "marchait" par coincidence : le fichier de sortie a
-        # TOUJOURS plus d'entrees dans 'filament_colour' que son entree (3 primaires + N melanges),
-        # donc un numero qui depassait la plage la premiere fois peut y rentrer la deuxieme - mais
-        # sans aucune garantie que la couleur obtenue alors soit la bonne, puisque ce numero ne
-        # correspondait a rien de declare a l'origine (il tombe sur UNE DES couleurs deja melangees
-        # au premier passage, pas forcement la teinte voulue pour cette zone precise).
-        $scriptListerEtatsPaintColor = {
-            param([string]$texte)
-            $nibblesEntree = New-Object System.Collections.Generic.List[int]
-            for ($i = $texte.Length - 1; $i -ge 0; $i--) {
-                $nibblesEntree.Add([System.Convert]::ToInt32([string]$texte[$i], 16))
-            }
-            $position = 0
-            $etatsTrouves = New-Object System.Collections.Generic.List[int]
-            $pile = New-Object System.Collections.Generic.List[int]
-            while ($true) {
-                $code = $nibblesEntree[$position]; $position++
-                $cotesDivises = $code -band 0x3
-                $estDivise = $cotesDivises -ne 0
-                $nombreEnfants = 0
-                if ($estDivise) {
-                    $nombreEnfants = $cotesDivises + 1
-                } else {
-                    if (($code -band 0xC) -eq 0xC) {
-                        $n2 = $nibblesEntree[$position]; $position++
-                        if ($n2 -eq 0xF) {
-                            $n3 = $nibblesEntree[$position]; $position++
-                            $etat = $n3 + 18
-                        } else {
-                            $etat = $n2 + 3
-                        }
-                    } else {
-                        $etat = $code -shr 2
-                    }
-                    if ($etat -ne 0) { [void]$etatsTrouves.Add($etat) }
-                }
-                if ($pile.Count -eq 0) {
-                    if ($estDivise) { $pile.Add($nombreEnfants); continue } else { break }
-                }
-                if ($estDivise) {
-                    $pile.Add($nombreEnfants)
-                } else {
-                    $pile[$pile.Count - 1] = $pile[$pile.Count - 1] - 1
-                }
-                while ($pile.Count -gt 0 -and $pile[$pile.Count - 1] -eq 0) {
-                    $pile.RemoveAt($pile.Count - 1)
-                    if ($pile.Count -gt 0) { $pile[$pile.Count - 1] = $pile[$pile.Count - 1] - 1 }
-                }
-                if ($pile.Count -eq 0) { break }
-            }
-            return $etatsTrouves.ToArray()
-        }
-        $etatMaxReel = 0
-        $fichiersModelePourScan = @(Get-ChildItem -Path (Join-Path $dossierTemp "3D") -Recurse -Filter "*.model" -ErrorAction SilentlyContinue)
-        $cacheEtatsParCode = @{}
-        foreach ($fichierModelePourScan in $fichiersModelePourScan) {
-            $texteModelePourScan = [System.IO.File]::ReadAllText($fichierModelePourScan.FullName)
-            foreach ($m in [System.Text.RegularExpressions.Regex]::Matches($texteModelePourScan, 'paint_color="([0-9A-Fa-f]+)"')) {
-                $code = $m.Groups[1].Value
-                if (-not $cacheEtatsParCode.ContainsKey($code)) {
-                    try { $cacheEtatsParCode[$code] = & $scriptListerEtatsPaintColor $code } catch { $cacheEtatsParCode[$code] = @() }
-                }
-                foreach ($etat in $cacheEtatsParCode[$code]) {
-                    if ($etat -gt $etatMaxReel) { $etatMaxReel = $etat }
-                }
-            }
-        }
-        if (Test-Path $cheminParamsModele) {
-            $texteParamsPourScan = [System.IO.File]::ReadAllText($cheminParamsModele)
-            foreach ($m in [System.Text.RegularExpressions.Regex]::Matches($texteParamsPourScan, 'key="extruder" value="(\d+)"')) {
-                $valeur = [int]$m.Groups[1].Value
-                if ($valeur -gt $etatMaxReel) { $etatMaxReel = $valeur }
-            }
-        }
-        if ($etatMaxReel -gt $nombreCouleursOrigine) {
-            $nombreZonesOrphelines = $etatMaxReel - $nombreCouleursOrigine
-            & $EcrireLigne "ATTENTION : le maillage reference au moins $etatMaxReel couleur(s) alors que seulement $nombreCouleursOrigine sont listees dans ce fichier (filament_colour) - $nombreZonesOrphelines zone(s) peinte(s) ne correspondent a RIEN de declare et ne seront PAS melangees correctement sur ce passage. Pense a relancer le melange sur le fichier obtenu une deuxieme fois pour tenter de les rattraper (sans garantie que la teinte retrouvee alors soit la bonne)."
-            & $EcrireLigne ""
-        }
+        # melangees, silencieusement, sans qu'aucun message ne le signale. $etatsOrphelinsTrouves
+        # (declaree juste avant $scriptDecalerEtatPaintColor plus bas) est remplie PENDANT le
+        # remappage reel - pas de scan separe (correctif du 13/10/2026 : un premier essai faisait un
+        # passage dedie en PLUS du remappage, donc relisait et re-decodait TOUT le maillage une
+        # deuxieme fois sans rien afficher entre les deux - sur un gros fichier, ca pouvait
+        # ressembler a un blocage de plusieurs minutes). Le message d'avertissement est affiche plus
+        # bas, une fois le remappage termine.
 
         # Nombre de melanges a produire (10/10/2026, demande par Tomyn ; plafond recalcule le
         # 11/10/2026 au passage de l'outil en mode trio) : jusqu'a 32 emplacements au total dans
@@ -3431,8 +3355,9 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         # decalage fixe de 3, puisque deux couleurs d'origine peuvent desormais partager le meme
         # emplacement de melange. Avec $tableauGroupe = @(0,1,2,...) (une couleur = un groupe, le
         # cas par defaut), le resultat est identique a l'ancien "+3" pour chaque etat.
+        $etatsOrphelinsTrouves = New-Object System.Collections.Generic.List[int]
         $scriptDecalerEtatPaintColor = {
-            param([string]$texte, [int[]]$tableauGroupe)
+            param([string]$texte, [int[]]$tableauGroupe, [System.Collections.Generic.List[int]]$refEtatsOrphelins)
             $nibblesEntree = New-Object System.Collections.Generic.List[int]
             for ($i = $texte.Length - 1; $i -ge 0; $i--) {
                 $nibblesEntree.Add([System.Convert]::ToInt32([string]$texte[$i], 16))
@@ -3471,8 +3396,12 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
                             $nouvelEtat = 4 + $tableauGroupe[$etat - 1]
                         } else {
                             # Securite : un etat hors de la plage connue (ne devrait pas arriver)
-                            # reste tel quel plutot que de produire un code invalide.
+                            # reste tel quel plutot que de produire un code invalide. 13/10/2026 :
+                            # note dans $refEtatsOrphelins (liste, mutee par reference - pas besoin
+                            # de passage separe sur tout le maillage pour le detecter, voir plus haut)
+                            # pour pouvoir avertir Tomyn une fois le remappage termine.
                             $nouvelEtat = $etat
+                            [void]$refEtatsOrphelins.Add($etat)
                         }
                         $propresNibbles.Clear()
                         if ($nouvelEtat -lt 3) {
@@ -3522,7 +3451,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
                 param($m)
                 $valeurOrigine = $m.Groups[1].Value
                 if (-not $cacheDecalage.ContainsKey($valeurOrigine)) {
-                    $cacheDecalage[$valeurOrigine] = & $scriptDecalerEtatPaintColor $valeurOrigine $groupeDe
+                    $cacheDecalage[$valeurOrigine] = & $scriptDecalerEtatPaintColor $valeurOrigine $groupeDe $etatsOrphelinsTrouves
                 }
                 return 'paint_color="' + $cacheDecalage[$valeurOrigine] + '"'
             }.GetNewClosure()
@@ -3553,11 +3482,25 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
                     $nouvelIndex = 5 + $groupeDe[$ancienIndex - 1]
                 } else {
                     $nouvelIndex = $ancienIndex
+                    # 13/10/2026 : meme suivi que pour paint_color ci-dessus (extrudeur par defaut
+                    # d'un objet entier qui pointe hors de la plage connue).
+                    [void]$etatsOrphelinsTrouves.Add($ancienIndex)
                 }
                 return 'key="extruder" value="' + $nouvelIndex + '"'
             }.GetNewClosure()
             $texteParams = [System.Text.RegularExpressions.Regex]::Replace($texteParams, 'key="extruder" value="(\d+)"', $evaluateurExtrudeur)
             [System.IO.File]::WriteAllText($cheminParamsModele, $texteParams)
+        }
+
+        # 13/10/2026, Tomyn : avertissement sur les zones orphelines (voir le commentaire plus haut,
+        # pres de $etatMaxRencontre) - rempli PENDANT le remappage ci-dessus (couts additionnel quasi
+        # nul, juste un .Add() dans le cas deja rare "hors plage"), jamais par un passage separe.
+        if ($etatsOrphelinsTrouves.Count -gt 0) {
+            $etatMaxRencontre = ($etatsOrphelinsTrouves | Measure-Object -Maximum).Maximum
+            $nombreZonesOrphelines = $etatsOrphelinsTrouves.Count
+            & $EcrireLigne ""
+            & $EcrireLigne "ATTENTION : $nombreZonesOrphelines zone(s) peinte(s) (ou objet(s)) referencent un numero de couleur allant jusqu'a $etatMaxRencontre, alors que seulement $nombreCouleursOrigine couleur(s) sont listees dans ce fichier (filament_colour) - ces zones ne correspondent a RIEN de declare et n'ont PAS ete melangees correctement sur ce passage. Pense a relancer le melange sur le fichier obtenu une deuxieme fois pour tenter de les rattraper (sans garantie que la teinte retrouvee alors soit la bonne)."
+            & $EcrireLigne ""
         }
 
         # Correctif du 10/10/2026 (confirme en inspectant le fichier produit : toutes les entrees du
@@ -3668,7 +3611,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 11h25]"
+$form.Text = "Melange de couleurs 3MF [build 13/10 11h35]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"
