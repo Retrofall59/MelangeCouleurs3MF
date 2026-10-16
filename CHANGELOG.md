@@ -7,6 +7,19 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## L'overlay de progression ne passe plus devant les avertissements qu'il faut encore valider
+## (16/10/2026, Tomyn : "la barre de progression se met devant l'avertissement de la couverture
+## donc chiant parce qu'on peut pas bien cliquer sur le bouton pour accepter")
+
+L'overlay (toujours affiché au premier plan, TopMost) s'affichait trop tôt dans le lancement d'un
+fichier seul : avant l'avertissement "Couverture à surveiller" et avant la confirmation
+d'écrasement d'un fichier déjà existant, qui sont des boîtes modales mais SANS TopMost - l'overlay
+passait devant et empêchait de cliquer sur leurs boutons Oui/Non/OK. Il ne s'affiche désormais
+qu'une fois ces confirmations validées, juste avant le vrai traitement - et il est aussi masqué
+avant d'afficher la boîte d'erreur en cas d'échec, pour la même raison.
+
+---
+
 ## La barre de progression disparaît maintenant seule, quelques secondes après 100% (16/10/2026,
 ## Tomyn : "la barre de progression quand elle est arrivée à 100% elle reste, il faut que je
 ## reclique de l'application pour qu'elle disparaisse, il faudrait qu'elle disparaisse au bout

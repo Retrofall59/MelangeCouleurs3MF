@@ -5703,9 +5703,6 @@ $btnLancer.Add_Click({
     $btnLotFichiers.Enabled = $false
     $testRapide = $caseTestRapide.Checked
     $cheminSortieTemporaire = $null
-    # 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete au
-    # dessus de l'appli et qui bloque toutes action" - voir Afficher-OverlayProgression plus haut.
-    Afficher-OverlayProgression "Melange en cours..."
     try {
         $nomTrio = $menuTrio.SelectedItem.ToString()
         $trio = $TRIOS[$nomTrio]
@@ -5751,6 +5748,14 @@ $btnLancer.Add_Click({
         Ecrire-Journal "Trio choisi : $nomTrio"
         if ($testRapide) { Ecrire-Journal "(Test rapide - rien ne sera enregistre a cote du fichier d'origine)" }
         Ecrire-Journal ""
+        # 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete
+        # au dessus de l'appli et qui bloque toutes action" - voir Afficher-OverlayProgression plus
+        # haut. Affichee seulement a partir d'ici (pas avant) : les avertissements/confirmations
+        # juste au-dessus (couverture, ecrasement du fichier existant) sont des boites modales SANS
+        # TopMost - l'overlay (TopMost) passait devant et empechait de cliquer sur leurs boutons
+        # (16/10/2026, Tomyn : "la barre de progression se met devant l'avertissement de la
+        # couverture donc chiant parce qu'on peut pas bien cliquer sur le bouton pour accepter").
+        Afficher-OverlayProgression "Melange en cours..."
         Traiter-Fichier3MF $cheminEntree $cheminSortie $trio $pasChoisi ${function:Ecrire-Journal} ([int]$selecteurMelanges.Value) {
             param($pct)
             Mettre-A-Jour-OverlayProgression $pct
@@ -5773,6 +5778,9 @@ $btnLancer.Add_Click({
     } catch {
         Ecrire-Journal "ERREUR : $_"
         if ($nomTrio -and -not $testRapide) { Ajouter-LigneHistorique $nomTrio $cheminEntree "ECHEC : $_" }
+        # Overlay masque AVANT la boite d'erreur (meme raison que plus haut : TopMost, il passerait
+        # devant et empecherait de cliquer sur OK).
+        Masquer-OverlayProgression
         Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
     } finally {
         if ($cheminSortieTemporaire -and (Test-Path $cheminSortieTemporaire)) {
