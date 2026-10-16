@@ -3741,6 +3741,15 @@ try {
     $form.Icon = [System.Drawing.Icon]::FromHandle($bmpIcone.GetHicon())
 } catch { }
 
+# Icone dans la zone de notification Windows, pour prevenir a la fin d'un lot sans avoir a garder
+# l'oeil sur la fenetre (16/10/2026, idee d'amelioration validee "TOUS" - meme principe que
+# Coloriser-STL, qui l'a deja).
+$script:notifIcon = New-Object System.Windows.Forms.NotifyIcon
+$script:notifIcon.Icon = if ($form.Icon) { $form.Icon } else { [System.Drawing.SystemIcons]::Information }
+$script:notifIcon.Text = "Melange de couleurs 3MF"
+$script:notifIcon.Visible = $true
+$form.Add_FormClosing({ $script:notifIcon.Visible = $false; $script:notifIcon.Dispose() }.GetNewClosure())
+
 $banniere = New-Object System.Windows.Forms.Panel
 $banniere.Dock = "Top"
 $banniere.Height = $THEME.HauteurBanniere
@@ -4507,6 +4516,26 @@ $btnLotFichiers.Location = New-Object System.Drawing.Point(215, $yActuel)
 $btnLotFichiers.Size = New-Object System.Drawing.Size(195, 32)
 Rendre-BoutonPlat $btnLotFichiers "secondaire"
 $form.Controls.Add($btnLotFichiers)
+
+# "Relancer les echecs" (16/10/2026, idee d'amelioration validee "TOUS") - meme principe que le
+# bouton equivalent de Coloriser-STL : evite de devoir re-choisir le dossier/les fichiers a la main
+# pour juste reprendre ce qui n'a pas ete fait (echec OU pas encore atteint si le lot a ete
+# annule). Invisible par defaut, rendu visible par Traiter-LotDeFichiers uniquement s'il reste
+# vraiment quelque chose a reprendre (voir $script:dernierLotRestantsMelange plus bas).
+$script:dernierLotRestantsMelange = @()
+$script:dernierLotTrioNomMelange = $null
+$script:dernierLotTrioMelange = $null
+$btnRelancerEchecsLot = New-Object System.Windows.Forms.Button
+$btnRelancerEchecsLot.Text = "Relancer les echecs..."
+$btnRelancerEchecsLot.Location = New-Object System.Drawing.Point(415, $yActuel)
+$btnRelancerEchecsLot.Size = New-Object System.Drawing.Size(195, 32)
+Rendre-BoutonPlat $btnRelancerEchecsLot "discret"
+$btnRelancerEchecsLot.Visible = $false
+$btnRelancerEchecsLot.Add_Click({
+    if ($script:dernierLotRestantsMelange.Count -eq 0) { return }
+    Traiter-LotDeFichiers @($script:dernierLotRestantsMelange) $script:dernierLotTrioNomMelange $script:dernierLotTrioMelange
+})
+$form.Controls.Add($btnRelancerEchecsLot)
 $yActuel += 40
 
 # Historique cumulatif (11/10/2026, Tomyn : "toutes stp") - ouvre historique-lots.log (alimente par
@@ -6114,6 +6143,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
     $menuTrio.Enabled = $false
     $btnLotDossier.Enabled = $false
     $btnLotFichiers.Enabled = $false
+    $btnRelancerEchecsLot.Enabled = $false
     $labelProgresLot.Visible = $true
     $barreProgresLot.Visible = $true
     $barreProgresLot.Minimum = 0
@@ -6128,6 +6158,9 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
     try {
         $reussis = New-Object System.Collections.Generic.List[string]
         $echecs = New-Object System.Collections.Generic.List[string]
+        # Chemins d'ENTREE reussis (pas les sorties, cf. $reussis) - necessaire pour calculer les
+        # "restants" ($fichiers moins ceux-ci) pour le bouton "Relancer les echecs..." plus bas.
+        $inputsReussis = New-Object System.Collections.Generic.List[string]
         $dernierCheminSortie = $null
         $interrompu = $false
 
@@ -6158,6 +6191,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
                     Mettre-A-Jour-OverlayProgression ([int]((($i - 1) + ($pct / 100.0)) / $fichiers.Count * 100))
                 }.GetNewClosure()
                 $reussis.Add($cheminSortie)
+                $inputsReussis.Add($fichier)
                 $dernierCheminSortie = $cheminSortie
                 Ajouter-LigneHistorique $nomTrio $fichier "OK -> $cheminSortie"
                 # Nombre de couleurs detectees par fichier (10/10/2026, Tomyn : "toutes stp") - 3
@@ -6233,6 +6267,21 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
             if ($echecs.Count -gt 0) { [System.Media.SystemSounds]::Exclamation.Play() } else { [System.Media.SystemSounds]::Asterisk.Play() }
         } catch { }
 
+        # Notification Windows (zone de notification), en plus du son - pratique pour un lot lance
+        # puis laisse de cote (16/10/2026, idee d'amelioration validee "TOUS").
+        try {
+            $script:notifIcon.ShowBalloonTip(6000, "Melange termine", "$($reussis.Count) reussi(s), $($echecs.Count) echec(s)$(if ($interrompu) { ' (annule)' })", [System.Windows.Forms.ToolTipIcon]::Info)
+        } catch { }
+
+        # "Restants" pour le bouton "Relancer les echecs..." (16/10/2026) - tout fichier du lot qui
+        # n'a pas abouti a un succes, qu'il ait vraiment echoue OU qu'il n'ait jamais ete atteint
+        # (lot annule en cours de route) : dans les deux cas, Tomyn veut pouvoir reprendre sans
+        # refaire toute la selection a la main.
+        $script:dernierLotRestantsMelange = @($fichiers | Where-Object { $inputsReussis -notcontains $_ })
+        $script:dernierLotTrioNomMelange = $nomTrio
+        $script:dernierLotTrioMelange = $trio
+        $btnRelancerEchecsLot.Visible = ($script:dernierLotRestantsMelange.Count -gt 0)
+
         $titreResume = if ($interrompu) { "Lot annule" } else { "Lot termine" }
         $messageResume = "$titreResume en $dureeTexte.`r`n`r`nReussis : $($reussis.Count)`r`nEchecs : $($echecs.Count)"
         if ($echecs.Count -gt 0) { $messageResume += "`r`n`r`nVoir le journal pour le detail des echecs." }
@@ -6248,6 +6297,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         $menuTrio.Enabled = $true
         $btnLotDossier.Enabled = $true
         $btnLotFichiers.Enabled = $true
+        $btnRelancerEchecsLot.Enabled = $true
         $labelProgresLot.Visible = $false
         $barreProgresLot.Visible = $false
         Masquer-OverlayProgression

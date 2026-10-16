@@ -7,6 +7,23 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Bouton "Relancer les echecs..." et notification Windows en fin de lot ("TOUS", 16/10/2026)
+
+Deux idées d'amélioration que Coloriser-STL avait déjà et qui manquaient encore ici :
+
+**Bouton "Relancer les echecs..."**, à côté des boutons de lot - reprend uniquement les fichiers
+qui n'ont pas abouti a un succes lors du dernier lot (vrais echecs OU fichiers jamais atteints si
+le lot a ete annule en cours de route), sans avoir a re-choisir le dossier/les fichiers a la main.
+Meme principe que le bouton equivalent de Coloriser-STL.
+
+**Notification Windows (zone de notification) a la fin d'un lot**, en plus du son deja joue -
+pratique pour un lot lance puis laisse de cote. Meme mecanisme (`NotifyIcon`/`ShowBalloonTip`) que
+Coloriser-STL, qui l'avait deja.
+
+Comme pour le reste de ce fichier, non teste en conditions reelles faute de Windows disponible ici.
+
+---
+
 ## Galerie de tous les resultats d'un lot, et temps restant estime (ETA) ("Ok pour tout", 16/10/2026)
 
 **Galerie montrant TOUS les resultats reussis d'un lot, pas seulement le dernier.** Jusqu'ici, a la
