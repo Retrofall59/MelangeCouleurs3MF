@@ -7,6 +7,24 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correction de lenteur : "Suggérer un trio pour ce fichier..." (16/10/2026, Tomyn : "quand j'ai
+## beaucoup de trio perso et que je clique suggerer un trio pour ce fichier c'est ultra long c'est
+## chiant")
+
+Le vrai coût n'était pas le calcul de couleur (rapide), c'était `Obtenir-CouleursFichier3MF` qui
+**dézippe le .3mf sur le disque** (extraction + nettoyage) à chaque appel - et
+`Verifier-CouvertureFichier` l'appelait une fois PAR TRIO testé. Avec beaucoup de trios
+personnalisés (et pire : la recherche de secours dans "mes couleurs", qui teste toutes les
+combinaisons de 3 possibles - des centaines avec un stock un peu fourni), ça redézippait le même
+fichier inchangé encore et encore. Séparé en deux fonctions : `Verifier-CouvertureAvecCouleurs`
+fait le calcul à partir d'une liste de couleurs déjà extraite, et `Verifier-CouvertureFichier`
+devient un simple raccourci (extrait puis délègue) pour les rares endroits qui ne testent qu'un
+seul trio. Les trois boutons de suggestion ("Suggérer un trio...", "Suggérer 5 trios...", et la
+recherche dans le stock de couleurs) extraient maintenant le fichier UNE SEULE fois et réutilisent
+cette liste pour tous les trios/combinaisons testés.
+
+---
+
 ## Passerelle depuis Coloriser-STL : -FichierInitial (16/10/2026)
 
 Côté Coloriser-STL, chaque résultat .3mf a maintenant un bouton "Analyser les couleurs..." qui

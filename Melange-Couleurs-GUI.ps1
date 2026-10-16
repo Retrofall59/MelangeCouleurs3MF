@@ -2122,13 +2122,17 @@ function Obtenir-MeilleuresCombosDepuisCouleurs([array]$couleurs, [int]$topN) {
 }
 
 # Meme recherche combinatoire que ci-dessus, mais notee par rapport a un FICHIER precis (ecart Lab
-# moyen via Verifier-CouvertureFichier, meme metrique que "Suggerer un trio pour ce fichier...")
-# plutot que l'aire "a vide" du trio - utilisee quand aucun trio deja sauvegarde ne colle bien a
-# ce fichier, pour chercher directement dans le stock de couleurs individuelles une meilleure
-# combinaison (12/10/2026, Tomyn : "s'il trouve pas le trio adequat ... propose ca ca et la ca
-# marche"). Renvoie $null si le stock a moins de 3 couleurs ou si aucune combinaison n'est
+# moyen via Verifier-CouvertureAvecCouleurs, meme metrique que "Suggerer un trio pour ce
+# fichier...") plutot que l'aire "a vide" du trio - utilisee quand aucun trio deja sauvegarde ne
+# colle bien a ce fichier, pour chercher directement dans le stock de couleurs individuelles une
+# meilleure combinaison (12/10/2026, Tomyn : "s'il trouve pas le trio adequat ... propose ca ca et
+# la ca marche"). Renvoie $null si le stock a moins de 3 couleurs ou si aucune combinaison n'est
 # exploitable.
-function Obtenir-MeilleureComboDepuisCouleursPourFichier([string]$chemin3mf, [array]$couleurs) {
+# 16/10/2026 : prend $couleursFichier (deja extrait par l'appelant, voir Obtenir-CouleursFichier3MF)
+# au lieu d'un chemin de fichier - evite de redezipper le .3mf une fois par combinaison testee
+# (potentiellement des centaines, C(n,3) pour n couleurs en stock) alors que le fichier ne change
+# pas d'une combinaison a l'autre.
+function Obtenir-MeilleureComboDepuisCouleursPourFichier([array]$couleursFichier, [array]$couleurs) {
     $n = $couleurs.Count
     if ($n -lt 3) { return $null }
     $meilleurResultat = $null
@@ -2137,7 +2141,7 @@ function Obtenir-MeilleureComboDepuisCouleursPourFichier([string]$chemin3mf, [ar
         for ($j = $i + 1; $j -lt $n - 1; $j++) {
             for ($k = $j + 1; $k -lt $n; $k++) {
                 $combo = @($couleurs[$i], $couleurs[$j], $couleurs[$k])
-                $resultat = Verifier-CouvertureFichier $chemin3mf $combo
+                $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $combo
                 if (-not $resultat) { continue }
                 if (-not $meilleurResultat -or $resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
                     $meilleurResultat = $resultat
@@ -2492,8 +2496,18 @@ function Obtenir-CouleursFichier3MF([string]$chemin3mf) {
 # plus grossier - 10 au lieu de 5 - pour rester rapide dans un controle "a la demande"). Un seuil
 # empirique de 12 (meme echelle Lab que Obtenir-DistanceLab utilisee partout ailleurs) separe "le
 # dosage trouve est visuellement tres proche" de "ca va se voir a l'oeil".
-function Verifier-CouvertureFichier($chemin3mf, $trio) {
-    $couleurs = Obtenir-CouleursFichier3MF $chemin3mf
+# 16/10/2026, Tomyn : "quand j'ai beaucoup de trio perso et que je clique suggerer un trio pour ce
+# fichier c'est ultra long" - le vrai cout n'est pas le calcul Lab (rapide), c'est
+# Obtenir-CouleursFichier3MF qui DEZIPPE le .3mf sur le disque (ExtractToDirectory, puis nettoyage)
+# a CHAQUE appel. Verifier-CouvertureFichier ci-dessous le faisait une fois PAR TRIO teste - avec
+# beaucoup de trios personnalises (et pire, la recherche combinatoire dans "mes couleurs" juste en
+# dessous, qui peut tester des centaines de combinaisons de 3), ca fait autant de dezippages
+# complets du meme fichier, inchange, pour rien. Separe maintenant en deux : cette fonction fait le
+# calcul Lab seul, a partir d'une liste de couleurs DEJA extraite (couts fixe, appele une seule
+# fois par le code appelant) ; Verifier-CouvertureFichier juste en dessous redevient un simple
+# raccourci (extrait puis appelle celle-ci) pour les endroits qui ne testent qu'UN seul trio et
+# n'ont donc rien a gagner a se compliquer.
+function Verifier-CouvertureAvecCouleurs($couleurs, $trio) {
     if ($couleurs.Count -eq 0) { return $null }
     $primairesRGB = @($trio | ForEach-Object { Obtenir-RGBDepuisHex $_.Hex })
     $seuilEcart = 12.0
@@ -2537,6 +2551,14 @@ function Verifier-CouvertureFichier($chemin3mf, $trio) {
         EcartMax            = ($distances | Measure-Object -Maximum).Maximum
         Details             = $details.ToArray()
     }
+}
+
+# Raccourci pour les appelants qui ne testent qu'UN seul trio sur le fichier (extrait les couleurs
+# une fois puis delegue a Verifier-CouvertureAvecCouleurs ci-dessus) - inchange niveau API, tous
+# les appels existants continuent de marcher tels quels.
+function Verifier-CouvertureFichier($chemin3mf, $trio) {
+    $couleurs = Obtenir-CouleursFichier3MF $chemin3mf
+    return Verifier-CouvertureAvecCouleurs $couleurs $trio
 }
 
 # Rapport texte pour un resultat de Verifier-CouvertureFichier - factorise car utilise a la fois
@@ -4048,9 +4070,15 @@ function Obtenir-NombreHexCommuns([array]$composantsA, [array]$composantsB) {
 }
 function Obtenir-SuggestionsTriosDiversifiees([string]$chemin3mf, [int]$nombreVoulu) {
     $candidats = New-Object System.Collections.Generic.List[object]
+    # 16/10/2026 : extrait les couleurs du .3mf UNE SEULE FOIS ici (voir Verifier-CouvertureAvecCouleurs
+    # plus haut) - avant, chacun des appels Verifier-CouvertureFichier ci-dessous (un par trio
+    # personnalise, PLUS un par combinaison de 3 du stock de couleurs, potentiellement des centaines)
+    # redezippait le meme fichier inchange a chaque fois. Avec "beaucoup de trios perso", ca rendait
+    # ce bouton tres long (signale par Tomyn).
+    $couleursFichier = Obtenir-CouleursFichier3MF $chemin3mf
 
     foreach ($nom in (Obtenir-CandidatsSuggestionTrio)) {
-        $resultat = Verifier-CouvertureFichier $chemin3mf $TRIOS[$nom]
+        $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
         if ($resultat) { [void]$candidats.Add(@{ Nom = $nom; Composants = $TRIOS[$nom]; Resultat = $resultat }) }
     }
 
@@ -4060,7 +4088,7 @@ function Obtenir-SuggestionsTriosDiversifiees([string]$chemin3mf, [int]$nombreVo
             for ($j = $i + 1; $j -lt $n - 1; $j++) {
                 for ($k = $j + 1; $k -lt $n; $k++) {
                     $combo = @($script:MesCouleurs[$i], $script:MesCouleurs[$j], $script:MesCouleurs[$k])
-                    $resultat = Verifier-CouvertureFichier $chemin3mf $combo
+                    $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $combo
                     if ($resultat) {
                         $nomCombo = ($combo | ForEach-Object { $_.Nom }) -join " + "
                         [void]$candidats.Add(@{ Nom = $nomCombo; Composants = $combo; Resultat = $resultat })
@@ -4187,10 +4215,15 @@ $btnSuggererTrio.Add_Click({
     $btnSuggererTrio.Enabled = $false
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
     try {
+        # 16/10/2026, Tomyn : "quand j'ai beaucoup de trio perso ... c'est ultra long" - le fichier
+        # etait redezippe UNE FOIS PAR TRIO teste (voir Verifier-CouvertureAvecCouleurs plus haut
+        # pour le detail). Extrait une seule fois ici, reutilise pour chaque trio ET pour la
+        # recherche dans "mes couleurs" juste en dessous si besoin.
+        $couleursFichier = Obtenir-CouleursFichier3MF $cheminAVerifier
         $meilleurNom = $null
         $meilleurResultat = $null
         foreach ($nom in $candidats) {
-            $resultat = Verifier-CouvertureFichier $cheminAVerifier $TRIOS[$nom]
+            $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
             if (-not $resultat) { continue }
             if (-not $meilleurResultat -or $resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
                 $meilleurNom = $nom
@@ -4212,7 +4245,7 @@ $btnSuggererTrio.Add_Click({
             # trouve pas le trio adequat ... propose ca ca et la ca marche") une combinaison de 3
             # qui ferait mieux, meme si elle n'a jamais ete sauvegardee comme trio.
             if ($script:MesCouleurs.Count -ge 3) {
-                $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $cheminAVerifier $script:MesCouleurs
+                $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
                 if ($meilleureComboStock -and $meilleureComboStock.Resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
                     $nomsComboStock = ($meilleureComboStock.Composants | ForEach-Object { $_.Nom }) -join " + "
                     $messageResultat += "`r`n`r`nEn revanche, dans tes couleurs individuelles (Gerer mes couleurs...), la combinaison '$nomsComboStock' ferait mieux : ecart moyen $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 1)) au lieu de $([Math]::Round($meilleurResultat.EcartMoyen, 1))."
