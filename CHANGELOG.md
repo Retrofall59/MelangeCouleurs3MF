@@ -7,6 +7,19 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Diagnostic : le fichier initial de la passerelle n'arrivait toujours pas (16/10/2026, Tomyn :
+## "toujours pas il prend pas le bon il prend celui [non] genere par colorisation")
+
+Après avoir corrigé le lancement côté Coloriser-STL (`wscript.exe` direct au lieu de passer par
+l'association de fichier .vbs), le souci persistait. Sans machine Windows pour reproduire, ajouté
+une trace explicite dans le journal au démarrage : "Fichier initial reçu de Coloriser-STL : ..."
+ou "Aucun fichier initial reçu..." - ça dira d'un coup d'œil si `-FichierInitial` arrive vraiment
+jusqu'ici ou pas, pour savoir si le problème est encore côté transmission (Coloriser-STL /
+`Lancer-Melange-Couleurs.vbs`) ou ici. Titre de la fenêtre aussi mis à jour (`[build 16/10 08h50]`)
+pour vérifier facilement que c'est bien le nouveau fichier qui tourne.
+
+---
+
 ## Correction de lenteur : "Suggérer un trio pour ce fichier..." (16/10/2026, Tomyn : "quand j'ai
 ## beaucoup de trio perso et que je clique suggerer un trio pour ce fichier c'est ultra long c'est
 ## chiant")

@@ -3668,7 +3668,7 @@ for ($i = 1; $i -le $etapesSplash; $i++) {
 # ============================== FENETRE ==============================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Melange de couleurs 3MF [build 13/10 11h50]"
+$form.Text = "Melange de couleurs 3MF [build 16/10 08h50]"
 $form.Size = New-Object System.Drawing.Size(800, 1060)
 $form.MinimumSize = New-Object System.Drawing.Size(800, 940)
 $form.FormBorderStyle = "Sizable"
@@ -5918,6 +5918,21 @@ $btnLotFichiers.Add_Click({
 # utilise s'il est fourni et existe toujours - c'est le resultat que Tomyn vient d'obtenir dans
 # l'autre outil, donc plus pertinent que l'ancien fichier. Sauvegarde aussi comme "dernier fichier"
 # pour que ce choix survive au prochain lancement normal (sans argument) de l'outil.
+# 16/10/2026 : trace explicite dans le journal de ce qui a ete recu comme -FichierInitial (Tomyn :
+# "il prend toujours pas le bon fichier") - permet de verifier d'un coup d'oeil, sans devoir
+# deviner, si l'argument arrive bien jusqu'ici depuis Coloriser-STL (et si "oui mais le chemin est
+# faux" ou carrement "non, rien recu" - les deux ont la meme consequence visible mais pas la meme
+# cause/correction).
+if ($FichierInitial) {
+    if (Test-Path $FichierInitial) {
+        Ecrire-Journal "Fichier initial recu de Coloriser-STL : $FichierInitial"
+    } else {
+        Ecrire-Journal "Fichier initial recu de Coloriser-STL mais introuvable sur le disque : $FichierInitial"
+    }
+} else {
+    Ecrire-Journal "Aucun fichier initial recu (lancement normal, ou -FichierInitial non transmis) - reprise du dernier fichier utilise si disponible."
+}
+
 $fichierADemarrer = $null
 if ($FichierInitial -and (Test-Path $FichierInitial)) {
     $fichierADemarrer = $FichierInitial
