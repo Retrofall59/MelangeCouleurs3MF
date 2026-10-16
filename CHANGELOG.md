@@ -7,6 +7,24 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Raccourcis clavier, vérif mise à jour, file d'attente de lots ("tu peux toutes les faire", 16/10/2026, deuxième série)
+
+Trois nouveautés portées depuis Coloriser-STL (même raisonnement, même code dans l'esprit) ;
+la quatrième idée proposée ce jour-là (graphique de consommation de crédits) ne s'applique pas
+ici — Melange-Couleurs-3MF ne consomme aucun crédit d'API, c'est un calcul de dosage purement
+local, contrairement à la colorisation via Meshy/Tripo :
+
+1. **Raccourcis clavier** - `Ctrl+Entrée` lance le mélange du fichier courant (équivalent au
+   bouton "Lancer"), `Échap` annule un lot en cours — fonctionne depuis la fenêtre principale et
+   depuis l'overlay de progression (focus séparé pendant un lot).
+2. **Vérification de mise à jour** - nouveau bouton "Verifier mise a jour" qui compare la date de
+   cette copie locale à la date du dernier commit GitHub touchant ce fichier précis. Déclenché
+   uniquement par le bouton, jamais automatiquement au démarrage.
+3. **File d'attente de plusieurs lots** - depuis la fenêtre de confirmation d'un lot (celle qui
+   liste les fichiers avec une case à cocher chacun), un nouveau bouton "Ajouter a la file" empile
+   le lot (fichiers déjà filtrés + trio choisi) au lieu de le lancer tout de suite. "Lancer la file
+   d'attente" (fenêtre principale) les enchaîne ensuite automatiquement l'un après l'autre.
+
 ## Pause/Reprendre, recherche dans l'historique, vérif espace disque, mode sombre ("tu peux toutes les faire", 16/10/2026)
 
 Quatre nouveautés portées depuis Coloriser-STL (même raisonnement, même code dans l'esprit) :

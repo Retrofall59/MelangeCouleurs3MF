@@ -43,6 +43,11 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 
+# Date de cette version locale, a comparer avec la date du dernier commit sur GitHub (voir
+# Verifier-MiseAJourDisponible plus bas) - 16/10/2026, meme recette que Coloriser-STL-GUI. A
+# METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications.
+$script:VERSION_BUILD_MELANGE = [DateTime]::new(2026, 10, 16)
+
 # 12/10/2026 : piste trouvee pour le bug "du contenu existe (confirme par compteur) mais seule une
 # partie se peint a l'ecran, le reste de la fenetre reste un vide etire" signale par Tomyn sur
 # plusieurs fenetres differentes (pastilles seules, texte manquant, puis seulement 2 lignes sur 4
@@ -353,6 +358,28 @@ function Afficher-Boite([string]$message, [string]$titre = "", [string]$boutons 
 
     $fenetre.Height = $yBoutons + $hauteurBouton + 28
     return $fenetre.ShowDialog($form)
+}
+
+# Verification de mise a jour (16/10/2026, idee d'amelioration validee "tu peux toutes les
+# faire") - meme recette que Coloriser-STL-GUI : compare $VERSION_BUILD_MELANGE a la date du
+# dernier commit GitHub touchant ce fichier. Bouton uniquement, jamais automatique au demarrage.
+function Verifier-MiseAJourDisponible {
+    try {
+        $reponse = Invoke-RestMethod -Uri "https://api.github.com/repos/Retrofall59/MelangeCouleurs3MF/commits?path=Melange-Couleurs-GUI.ps1&per_page=1" -Headers @{ "User-Agent" = "Melange-Couleurs-3MF" } -TimeoutSec 8
+    } catch {
+        Afficher-Boite "Impossible de contacter GitHub pour verifier (pas de connexion, ou GitHub inaccessible pour l'instant).`r`n`r`nDetail : $($_.Exception.Message)" "Verification impossible" "OK" "Warning" | Out-Null
+        return
+    }
+    if (-not $reponse -or $reponse.Count -eq 0) {
+        Afficher-Boite "GitHub n'a renvoye aucune information sur ce fichier - verification impossible pour l'instant." "Verification impossible" "OK" "Warning" | Out-Null
+        return
+    }
+    $dateDistante = [DateTime]::Parse($reponse[0].commit.committer.date).ToLocalTime().Date
+    if ($dateDistante -gt $script:VERSION_BUILD_MELANGE) {
+        Afficher-Boite "Une version plus recente de Melange-Couleurs-3MF est disponible sur GitHub.`r`n`r`nCette copie date du $($script:VERSION_BUILD_MELANGE.ToString('dd/MM/yyyy')).`r`nLa derniere mise a jour publiee date du $($dateDistante.ToString('dd/MM/yyyy')).`r`n`r`nRecupere la derniere version depuis la session Claude ou le repo GitHub." "Mise a jour disponible" "OK" "Warning" | Out-Null
+    } else {
+        Afficher-Boite "Cette copie est a jour (version du $($script:VERSION_BUILD_MELANGE.ToString('dd/MM/yyyy')))." "A jour" "OK" "Info" | Out-Null
+    }
 }
 
 # ============================== COULEUR : MEME MOTEUR QUE LA VERSION CONSOLE ==============================
@@ -4617,6 +4644,61 @@ $btnRelancerEchecsLot.Add_Click({
     Traiter-LotDeFichiers @($script:dernierLotRestantsMelange) $script:dernierLotTrioNomMelange $script:dernierLotTrioMelange
 })
 $form.Controls.Add($btnRelancerEchecsLot)
+$yActuel += 38
+
+# File d'attente de plusieurs lots (16/10/2026, idee validee "tu peux toutes les faire") :
+# depuis la fenetre de confirmation d'un lot (Afficher-ConfirmationLot plus bas), "Ajouter a la
+# file" empile le lot (fichiers deja filtres + trio) ici au lieu de le traiter tout de suite -
+# pratique pour enchainer plusieurs dossiers/trios differents sans rester devant l'appli entre
+# deux lots.
+$script:fileAttenteLotsMelange = New-Object System.Collections.Generic.List[hashtable]
+
+$listeFileAttenteMelange = New-Object System.Windows.Forms.ListBox
+$listeFileAttenteMelange.Location = New-Object System.Drawing.Point(15, $yActuel)
+$listeFileAttenteMelange.Size = New-Object System.Drawing.Size(595, 60)
+$form.Controls.Add($listeFileAttenteMelange)
+$yActuel += 64
+
+$btnLancerFileAttenteMelange = New-Object System.Windows.Forms.Button
+$btnLancerFileAttenteMelange.Text = "Lancer la file d'attente"
+$btnLancerFileAttenteMelange.Location = New-Object System.Drawing.Point(15, $yActuel)
+$btnLancerFileAttenteMelange.Size = New-Object System.Drawing.Size(290, 26)
+Rendre-BoutonPlat $btnLancerFileAttenteMelange "chaud"
+$btnLancerFileAttenteMelange.Add_Click({
+    if ($script:fileAttenteLotsMelange.Count -eq 0) {
+        Afficher-Boite "La file d'attente est vide." "Rien a lancer" "OK" "Info" | Out-Null
+        return
+    }
+    $btnLancerFileAttenteMelange.Enabled = $false
+    $btnViderFileAttenteMelange.Enabled = $false
+    $nombreLots = $script:fileAttenteLotsMelange.Count
+    try {
+        while ($script:fileAttenteLotsMelange.Count -gt 0) {
+            $lot = $script:fileAttenteLotsMelange[0]
+            [System.Windows.Forms.Application]::DoEvents()
+            Traiter-LotDeFichiers $lot.Fichiers $lot.NomTrio $lot.Trio
+            $script:fileAttenteLotsMelange.RemoveAt(0)
+            $listeFileAttenteMelange.Items.RemoveAt(0)
+        }
+        Afficher-Boite "File d'attente terminee ($nombreLots lot(s) traite(s) a la suite)." "File d'attente terminee" "OK" "Info" | Out-Null
+    } finally {
+        $btnLancerFileAttenteMelange.Enabled = $true
+        $btnViderFileAttenteMelange.Enabled = $true
+    }
+}.GetNewClosure())
+$form.Controls.Add($btnLancerFileAttenteMelange)
+
+$btnViderFileAttenteMelange = New-Object System.Windows.Forms.Button
+$btnViderFileAttenteMelange.Text = "Vider la file"
+$btnViderFileAttenteMelange.Location = New-Object System.Drawing.Point(315, $yActuel)
+$btnViderFileAttenteMelange.Size = New-Object System.Drawing.Size(130, 26)
+Rendre-BoutonPlat $btnViderFileAttenteMelange "secondaire"
+$btnViderFileAttenteMelange.Add_Click({
+    $script:fileAttenteLotsMelange.Clear()
+    $listeFileAttenteMelange.Items.Clear()
+}.GetNewClosure())
+$form.Controls.Add($btnViderFileAttenteMelange)
+$yActuel += 32
 $yActuel += 40
 
 # Historique cumulatif (11/10/2026, Tomyn : "toutes stp") - ouvre historique-lots.log (alimente par
@@ -4850,6 +4932,14 @@ $btnRestaurerConfig.Add_Click({
     }
 })
 $form.Controls.Add($btnRestaurerConfig)
+
+$btnVerifierMiseAJour = New-Object System.Windows.Forms.Button
+$btnVerifierMiseAJour.Text = "Verifier mise a jour"
+$btnVerifierMiseAJour.Location = New-Object System.Drawing.Point(215, ($yActuel + 32))
+$btnVerifierMiseAJour.Size = New-Object System.Drawing.Size(165, 28)
+Rendre-BoutonPlat $btnVerifierMiseAJour "discret"
+$btnVerifierMiseAJour.Add_Click({ Verifier-MiseAJourDisponible })
+$form.Controls.Add($btnVerifierMiseAJour)
 $yActuel += 64
 
 # Barre + libelle de progression du lot - invisibles au repos, affiches seulement pendant un
@@ -4944,6 +5034,17 @@ $btnAnnulerOverlay.Add_Click({
     $btnAnnulerOverlay.Enabled = $false
     $btnAnnulerOverlay.Text = "Annulation..."
 })
+
+# Raccourci clavier (16/10/2026) : l'overlay est une fenetre a part qui recoit le focus pendant
+# le traitement d'un lot, Echap ici doit donc etre gere sur l'overlay lui-meme.
+$overlayProgression.KeyPreview = $true
+$overlayProgression.Add_KeyDown({
+    param($sender, $e)
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape -and $btnAnnulerOverlay.Visible -and $btnAnnulerOverlay.Enabled) {
+        $e.Handled = $true
+        $btnAnnulerOverlay.PerformClick()
+    }
+}.GetNewClosure())
 
 # Bouton Pause (16/10/2026, idee d'amelioration validee "tu peux toutes les faire") - meme recette
 # que $btnPauseOverlay dans Coloriser-STL-GUI.ps1 : pas une vraie pause en plein milieu d'un
@@ -6193,15 +6294,36 @@ function Afficher-ConfirmationLot([string[]]$fichiers, [string]$nomTrio, $trio) 
     $btnAnnulerLot.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $popup.Controls.Add($btnAnnulerLot)
 
+    # "Ajouter a la file" (16/10/2026, idee validee "tu peux toutes les faire") : meme liste
+    # filtree que "Lancer le lot", mais empilee pour plus tard au lieu d'etre traitee tout de
+    # suite - DialogResult.Yes pour la distinguer de "Lancer le lot" (OK) sans toucher au reste
+    # de la fenetre.
+    $btnAjouterFile = New-Object System.Windows.Forms.Button
+    $btnAjouterFile.Text = "Ajouter a la file"
+    $btnAjouterFile.Location = New-Object System.Drawing.Point(10, 414)
+    $btnAjouterFile.Size = New-Object System.Drawing.Size(140, 32)
+    Rendre-BoutonPlat $btnAjouterFile "discret"
+    $btnAjouterFile.Anchor = "Bottom, Left"
+    $btnAjouterFile.DialogResult = [System.Windows.Forms.DialogResult]::Yes
+    $popup.Controls.Add($btnAjouterFile)
+
     $popup.AcceptButton = $btnLancerLot
     $popup.CancelButton = $btnAnnulerLot
 
-    if ($popup.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+    $resultatPopup = $popup.ShowDialog($form)
+    if ($resultatPopup -eq [System.Windows.Forms.DialogResult]::OK -or $resultatPopup -eq [System.Windows.Forms.DialogResult]::Yes) {
         $fichiersChoisis = New-Object System.Collections.Generic.List[string]
         for ($k = 0; $k -lt $liste.Items.Count; $k++) {
             if ($liste.GetItemChecked($k)) { [void]$fichiersChoisis.Add($cheminsParIndex[$k]) }
         }
-        Traiter-LotDeFichiers $fichiersChoisis $nomTrio $trio
+        if ($fichiersChoisis.Count -eq 0) { return }
+        if ($resultatPopup -eq [System.Windows.Forms.DialogResult]::Yes) {
+            $lot = @{ Fichiers = @($fichiersChoisis); NomTrio = $nomTrio; Trio = $trio }
+            [void]$script:fileAttenteLotsMelange.Add($lot)
+            [void]$listeFileAttenteMelange.Items.Add("$($fichiersChoisis.Count) fichier(s) - trio $nomTrio")
+        } else {
+            Traiter-LotDeFichiers $fichiersChoisis $nomTrio $trio
+        }
     }
 }
 
@@ -6629,6 +6751,25 @@ try {
         if ($prefModeSombre.ModeSombre) { Basculer-ModeSombre $true }
     }
 } catch { }
+
+# Raccourcis clavier (16/10/2026, demande de Tomyn) : Ctrl+Entree lance directement le melange
+# du fichier courant, Echap annule un lot en cours si l'overlay est visible et a le focus (sinon
+# c'est le KeyDown de l'overlay lui-meme, juste au-dessus, qui s'en charge).
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    param($sender, $e)
+    if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+        if ($btnLancer.Visible -and $btnLancer.Enabled) {
+            $e.Handled = $true
+            $btnLancer.PerformClick()
+        }
+    } elseif ($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
+        if ($overlayProgression.Visible -and $btnAnnulerOverlay.Visible -and $btnAnnulerOverlay.Enabled) {
+            $e.Handled = $true
+            $btnAnnulerOverlay.PerformClick()
+        }
+    }
+}.GetNewClosure())
 
 # Meme correctif que Coloriser-STL-GUI (10/10/2026) pour la taille de fenetre : plutot que de
 # calculer une taille/position a la main (deux tentatives ratees sur l'autre projet), on maximise
