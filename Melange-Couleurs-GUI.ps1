@@ -4222,13 +4222,26 @@ $btnSuggererTrio.Add_Click({
         $couleursFichier = Obtenir-CouleursFichier3MF $cheminAVerifier
         $meilleurNom = $null
         $meilleurResultat = $null
+        # 16/10/2026, Tomyn : "le trio proposé change à chaque clic, sans rien faire d'autre entre
+        # les deux" - en theorie impossible vu que tout le calcul ci-dessous est pur (meme fichier,
+        # memes trios -> meme resultat), donc avant de deviner une cause, on journalise le classement
+        # COMPLET de ce passage (tous les candidats testes + leur ecart exact, pas arrondi) dans le
+        # panneau "Avancement". Si le classement differe d'un clic a l'autre pour un meme fichier
+        # inchange, ca prouvera qu'un des candidats (ou le fichier lu) change reellement entre les
+        # clics, au lieu de deviner.
+        $resultatsTousLesCandidats = New-Object System.Collections.Generic.List[object]
         foreach ($nom in $candidats) {
             $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
             if (-not $resultat) { continue }
+            [void]$resultatsTousLesCandidats.Add(@{ Nom = $nom; Ecart = $resultat.EcartMoyen })
             if (-not $meilleurResultat -or $resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
                 $meilleurNom = $nom
                 $meilleurResultat = $resultat
             }
+        }
+        Ecrire-Journal "--- Suggestion de trio pour $(Split-Path $cheminAVerifier -Leaf) ($($resultatsTousLesCandidats.Count) trio(s) teste(s)) : ---"
+        foreach ($r in ($resultatsTousLesCandidats | Sort-Object Ecart)) {
+            Ecrire-Journal ("  $($r.Nom) : ecart $([Math]::Round($r.Ecart, 3))")
         }
         if (-not $meilleurResultat) {
             Afficher-Boite "Impossible de lire les couleurs de ce fichier (pas un .3mf Bambu Studio avec des couleurs enregistrees ?)." "Lecture impossible" "OK" "Warning" | Out-Null
