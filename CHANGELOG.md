@@ -7,6 +7,27 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Pause/Reprendre, recherche dans l'historique, vérif espace disque, mode sombre ("tu peux toutes les faire", 16/10/2026)
+
+Quatre nouveautés portées depuis Coloriser-STL (même raisonnement, même code dans l'esprit) :
+
+1. **Pause/Reprendre sur un lot** - bouton sur l'overlay de progression, à côté d'Annuler. Le
+   fichier en cours va à son terme, puis la boucle attend avant de passer au suivant.
+2. **"Rechercher dans l'historique..."** - nouvelle fenêtre qui analyse `historique-lots.log`
+   (déjà alimenté, jusqu'ici consultable seulement en l'ouvrant dans Notepad via "Voir
+   l'historique...") et affiche les lignes dans une liste filtrable en direct par date, trio,
+   fichier ou résultat.
+3. **Vérification de l'espace disque avant un gros lot** - la somme des tailles des fichiers
+   d'entrée sert d'estimation du besoin (le résultat est écrit juste à côté, taille comparable),
+   comparée à l'espace libre du disque - avertissement non bloquant si ça semble juste.
+4. **Mode sombre** - bouton dans la bannière, préférence retenue d'un lancement à l'autre. Même
+   limite assumée que Coloriser-STL : scope "basique", la couleur de survol exacte des boutons
+   n'est pas re-coloriée.
+
+Comme pour le reste de ce fichier, non testé en conditions réelles faute de Windows disponible ici.
+
+---
+
 ## Bouton "Relancer les echecs..." et notification Windows en fin de lot ("TOUS", 16/10/2026)
 
 Deux idées d'amélioration que Coloriser-STL avait déjà et qui manquaient encore ici :
