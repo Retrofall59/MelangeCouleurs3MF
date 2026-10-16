@@ -7,6 +7,20 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Barre de progression visuelle pour "Lancer le mélange" (16/10/2026, Tomyn : "le texte
+## d'avancement c'est bien mais c'est abstrait, faudrait plutot une barre de progression en plus,
+## c'est plus visuel")
+
+Jusqu'ici, seul le traitement en lot affichait une barre de progression - un lancement simple
+fichier n'avait que le texte défilant dans "Avancement". Traiter-Fichier3MF accepte maintenant un
+callback de progression optionnel, appelé à quelques étapes repérées (lecture config, calcul des
+dosages, extension des réglages, remappage du maillage, reconstruction du .3mf) - pas une mesure
+exacte (le remappage n'a pas de total de triangles connu à l'avance, donc avance par paliers), mais
+assez pour qu'elle bouge du début à la fin au lieu de rester figée. Réutilise la barre déjà en place
+au-dessus du journal (jusque-là réservée au lot).
+
+---
+
 ## Diagnostic : le fichier initial de la passerelle n'arrivait toujours pas (16/10/2026, Tomyn :
 ## "toujours pas il prend pas le bon il prend celui [non] genere par colorisation")
 

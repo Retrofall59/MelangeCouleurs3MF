@@ -2960,7 +2960,15 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
 # detailles sur le format retrouve dans l'exemple de Tomyn) - ici $EcrireLigne est un scriptblock
 # fourni par l'appelant pour afficher la progression dans le journal de la fenetre au lieu de
 # Write-Host.
-function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio, [int]$pasPourcent, [scriptblock]$EcrireLigne, [int]$nombreMelangesVoulu = 0) {
+function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio, [int]$pasPourcent, [scriptblock]$EcrireLigne, [int]$nombreMelangesVoulu = 0, [scriptblock]$MettreAJourProgression = $null) {
+    # 16/10/2026, Tomyn : "le texte d'avancement c'est bien mais c'est abstrait, faudrait plutot une
+    # barre de progression en plus, c'est plus visuel". $MettreAJourProgression (optionnel - $null
+    # pour les appelants qui ne fournissent pas encore de barre, ex. le lot) recoit un pourcentage
+    # 0-100 a quelques etapes reperees dans cette fonction (lecture, dosages, ecriture config,
+    # remappage du maillage, reconstruction) - pas une mesure exacte du temps reel (le remappage n'a
+    # pas de total de triangles connu a l'avance), mais assez pour que la barre avance de facon
+    # credible du debut a la fin au lieu de rester figee pendant que le journal texte defile.
+    $rapporterProgres = { param($pct) if ($MettreAJourProgression) { & $MettreAJourProgression $pct } }
     $primairesRGB = @($trio | ForEach-Object { Obtenir-RGBDepuisHex $_.Hex })
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
@@ -2977,6 +2985,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         }
 
         & $EcrireLigne "Lecture de la configuration..."
+        & $rapporterProgres 5
         $jsonTexte = [System.IO.File]::ReadAllText($cheminConfig)
         $config = $jsonTexte | ConvertFrom-Json
 
@@ -3047,6 +3056,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # ($hexCible, deja affichee en texte) - c'est precisement l'ecart entre les deux que
             # "ecart Lab" mesure, donc la pastille montre ce que le dosage donne vraiment.
             & $EcrireLigne ("Melange {0} ({1}) -> {2}  (ecart Lab {3:N1})" -f ($g + 1), $hexCible, $resume, $meilleur.Distance) $dosages[$g].ResultatHex
+            & $rapporterProgres ([int](10 + (($g + 1) / [Math]::Max(1, $nombreMelanges)) * 20))
         }
         & $EcrireLigne ""
 
@@ -3165,6 +3175,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
 
         $proprietes = $config.PSObject.Properties | Where-Object { $_.Value -is [array] -and $_.Value.Count -eq $nombreCouleursOrigine }
         & $EcrireLigne "Extension de $($proprietes.Count) reglage(s) 'par filament' a $nouveauTotal emplacements..."
+        & $rapporterProgres 40
         foreach ($prop in $proprietes) {
             $ancien = $prop.Value
             $nouveau = New-Object object[] $nouveauTotal
@@ -3265,6 +3276,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
                 }
             }
             & $EcrireLigne "Extension de flush_volumes_matrix ($nombreCouleursOrigine x $nombreCouleursOrigine -> $nouveauTotal x $nouveauTotal)..."
+            & $rapporterProgres 50
             Definir-ChampJson ([ref]$jsonTexte) "flush_volumes_matrix" $nouvelleMatrice
         }
 
@@ -3347,6 +3359,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         }
 
         & $EcrireLigne "Ecriture de la configuration modifiee..."
+        & $rapporterProgres 55
         [System.IO.File]::WriteAllText($cheminConfig, $jsonTexte)
 
         # Correctif du 10/10/2026 (fichier de test de Tomyn) : le maillage et les paint_color ne sont
@@ -3470,6 +3483,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         $fichiersModele = @(Get-ChildItem -Path (Join-Path $dossierTemp "3D") -Recurse -Filter "*.model" -ErrorAction SilentlyContinue)
         if ($fichiersModele.Count -gt 0) {
             & $EcrireLigne "Remappage des couleurs sur le maillage ($($fichiersModele.Count) fichier(s), peut prendre un moment)..."
+            & $rapporterProgres 60
             # Cache : un maillage peint n'a en pratique qu'une poignee de codes paint_color
             # DIFFERENTS (3 ou 4 en general, meme sur 200 000 triangles - chaque triangle d'une
             # meme zone colorise partage le meme code). Decoder/reencoder a chaque triangle est
@@ -3505,6 +3519,11 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
                 }
                 if ($etatCompteur.N % 200000 -eq 0) {
                     & $EcrireLigne "  ... $($etatCompteur.N) triangle(s) traite(s), ca travaille toujours..."
+                    # Pas de total de triangles connu a l'avance (cout d'un comptage prealable pas
+                    # justifie juste pour la barre) - palier croissant plafonne a 88%, juste pour que
+                    # la barre continue de bouger sur un gros fichier au lieu de rester figee a 60%
+                    # entre deux messages de journal.
+                    & $rapporterProgres ([Math]::Min(88, 60 + [Math]::Floor($etatCompteur.N / 200000) * 3))
                 }
                 $valeurOrigine = $m.Groups[1].Value
                 if (-not $cacheDecalage.ContainsKey($valeurOrigine)) {
@@ -3568,7 +3587,9 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
         # Studio n'a alors pas retrouve 3D/3dmodel.model et a affiche "le fichier ne contient pas de
         # donnees geometriques". On reconstruit le zip a la main, entree par entree, en forcant des
         # slashs - garanti conforme quel que soit le framework .NET utilise.
+        & $rapporterProgres 92
         & $EcrireLigne "Reconstruction du fichier .3mf..."
+        & $rapporterProgres 95
         if (Test-Path $cheminSortie) { Remove-Item $cheminSortie -Force }
         $fluxSortie = [System.IO.File]::Open($cheminSortie, [System.IO.FileMode]::Create)
         try {
@@ -3589,6 +3610,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
 
         & $EcrireLigne ""
         & $EcrireLigne "Termine : $cheminSortie"
+        & $rapporterProgres 100
     } finally {
         if (Test-Path $dossierTemp) { Remove-Item $dossierTemp -Recurse -Force -ErrorAction SilentlyContinue }
     }
@@ -5582,6 +5604,14 @@ $btnLancer.Add_Click({
     $btnLotFichiers.Enabled = $false
     $testRapide = $caseTestRapide.Checked
     $cheminSortieTemporaire = $null
+    # 16/10/2026, Tomyn : "le texte d'avancement c'est bien mais c'est abstrait, faudrait plutot une
+    # barre de progression en plus" - reutilise la barre deja existante pour le lot (meme
+    # emplacement, juste au-dessus du journal), vu qu'elle n'etait jusqu'ici jamais montree pour un
+    # lancement simple fichier.
+    $barreProgresLot.Visible = $true
+    $barreProgresLot.Minimum = 0
+    $barreProgresLot.Maximum = 100
+    $barreProgresLot.Value = 0
     try {
         $nomTrio = $menuTrio.SelectedItem.ToString()
         $trio = $TRIOS[$nomTrio]
@@ -5627,7 +5657,11 @@ $btnLancer.Add_Click({
         Ecrire-Journal "Trio choisi : $nomTrio"
         if ($testRapide) { Ecrire-Journal "(Test rapide - rien ne sera enregistre a cote du fichier d'origine)" }
         Ecrire-Journal ""
-        Traiter-Fichier3MF $cheminEntree $cheminSortie $trio $pasChoisi ${function:Ecrire-Journal} ([int]$selecteurMelanges.Value)
+        Traiter-Fichier3MF $cheminEntree $cheminSortie $trio $pasChoisi ${function:Ecrire-Journal} ([int]$selecteurMelanges.Value) {
+            param($pct)
+            $barreProgresLot.Value = [Math]::Max(0, [Math]::Min(100, $pct))
+            [System.Windows.Forms.Application]::DoEvents()
+        }.GetNewClosure()
 
         if ($testRapide) {
             Afficher-Boite "Test rapide termine - rien n'a ete enregistre.`r`n`r`nLe detail des melanges est dans le journal ci-contre." "Test rapide termine" "OK" "Info" | Out-Null
@@ -5650,6 +5684,7 @@ $btnLancer.Add_Click({
         if ($cheminSortieTemporaire -and (Test-Path $cheminSortieTemporaire)) {
             Remove-Item -Path $cheminSortieTemporaire -Force -ErrorAction SilentlyContinue
         }
+        $barreProgresLot.Visible = $false
         $btnLancer.Enabled = $true
         $btnParcourir.Enabled = $true
         $menuTrio.Enabled = $true
