@@ -7,6 +7,22 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Sauvegarde/restauration : couleurs individuelles et trios favoris ajoutés (16/10/2026)
+
+Tomyn a demandé un export/import de "config (couleurs + trios favoris)" pour pouvoir sauvegarder ou
+transférer ça sur un autre PC. En vérifiant avant de coder quoi que ce soit (comme convenu), ce
+bouton existait déjà — "Sauvegarder ma config..." / "Restaurer ma config..." zippe déjà les trios
+personnalisés, le dernier trio, les trios récents, l'historique des lots et les angles de
+référence. Mais `couleurs-personnalisees.json` ("mon stock" de couleurs individuelles) et
+`trios-favoris.json` n'étaient PAS dans la liste — exactement les deux fichiers que Tomyn a
+nommés. Ajoutés à `Obtenir-FichiersConfigConnus` (la liste centrale utilisée par les deux boutons),
+et la restauration recharge maintenant aussi `$script:MesCouleurs` et `$script:TriosFavoris` en
+mémoire (même raisonnement que pour les trios personnalisés : sans ça, le fichier serait bien
+écrit sur le disque mais l'appli continuerait d'afficher les anciennes valeurs jusqu'au prochain
+lancement).
+
+---
+
 Projet séparé de **Coloriser-STL** — pas de lien de code entre les deux, juste un enchaînement
 naturel dans le flux de travail (coloriser avec Meshy, *puis* passer le résultat dans cet outil
 avant de l'ouvrir dans Bambu Studio).

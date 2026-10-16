@@ -4414,15 +4414,21 @@ $btnVoirHistorique.Add_Click({
 $form.Controls.Add($btnVoirHistorique)
 $yActuel += 36
 
-# Sauvegarde/restauration groupee de toute la config (11/10/2026, Tomyn : "2-3") - regroupe les
-# petits fichiers crees par cet outil a cote de lui-meme (trios personnalises, dernier trio,
-# trios recents, historique des lots, angles de reference) dans un seul .zip, pratique en cas de
-# changement de PC ou de reinstallation plutot que de devoir retrouver et recopier chaque fichier a
-# la main. La liste est centralisee ici : un nouveau fichier de config cree plus tard dans le
-# script n'a qu'a etre ajoute a cette liste pour etre couvert par la sauvegarde/restauration.
+# Sauvegarde/restauration groupee de toute la config (11/10/2026, Tomyn : "2-3" ; complete le
+# 16/10/2026 avec couleurs-personnalisees.json et trios-favoris.json - Tomyn avait demande un
+# export/import "couleurs + trios favoris", et ces deux fichiers manquaient a l'appel alors que
+# la fonctionnalite de sauvegarde/restauration groupee existait deja pour tout le reste) - regroupe
+# les petits fichiers crees par cet outil a cote de lui-meme (trios personnalises, couleurs
+# individuelles, trios favoris, dernier trio, trios recents, historique des lots, angles de
+# reference) dans un seul .zip, pratique en cas de changement de PC ou de reinstallation plutot
+# que de devoir retrouver et recopier chaque fichier a la main. La liste est centralisee ici : un
+# nouveau fichier de config cree plus tard dans le script n'a qu'a etre ajoute a cette liste pour
+# etre couvert par la sauvegarde/restauration.
 function Obtenir-FichiersConfigConnus {
     return ,@(
         @{ Nom = "trios-personnalises.json"; Chemin = (Obtenir-CheminConfigTrios) }
+        @{ Nom = "couleurs-personnalisees.json"; Chemin = (Obtenir-CheminConfigCouleurs) }
+        @{ Nom = "trios-favoris.json";       Chemin = (Obtenir-CheminTriosFavoris) }
         @{ Nom = "dernier-trio.json";        Chemin = (Obtenir-CheminDernierTrio) }
         @{ Nom = "trios-recents.json";       Chemin = (Obtenir-CheminTriosRecents) }
         @{ Nom = "historique-lots.log";         Chemin = (Obtenir-CheminHistoriqueLots) }
@@ -4471,7 +4477,7 @@ $btnRestaurerConfig.Add_Click({
     $dialogue = New-Object System.Windows.Forms.OpenFileDialog
     $dialogue.Filter = "Archive ZIP (*.zip)|*.zip"
     if ($dialogue.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
-    if ((Afficher-Boite "Ceci va REMPLACER ta config actuelle (trios personnalises, dernier trio utilise, trios recents, historique, angles de reference) par celle de cette archive.`r`n`r`nContinuer ?" "Restaurer la config" "YesNo" "Warning") -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    if ((Afficher-Boite "Ceci va REMPLACER ta config actuelle (trios personnalises, couleurs individuelles, trios favoris, dernier trio utilise, trios recents, historique, angles de reference) par celle de cette archive.`r`n`r`nContinuer ?" "Restaurer la config" "YesNo" "Warning") -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("config3mf_" + [guid]::NewGuid().ToString("N"))
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
@@ -4493,6 +4499,14 @@ $btnRestaurerConfig.Add_Click({
         }
         $triosRestaures = Charger-TriosPersonnalises
         foreach ($nom in $triosRestaures.Keys) { $TRIOS[$nom] = $triosRestaures[$nom] }
+        # Meme raisonnement que pour $TRIOS juste au-dessus : "mes couleurs" et les trios favoris
+        # sont eux aussi charges en memoire une seule fois au demarrage (16/10/2026, ajoutes a la
+        # sauvegarde/restauration groupee) - sans ce rechargement, la restauration ecrirait bien
+        # les nouveaux fichiers sur le disque mais l'appli afficherait encore les anciens jusqu'au
+        # prochain lancement.
+        $script:MesCouleurs = @(Charger-MesCouleurs)
+        $script:TriosFavoris.Clear()
+        foreach ($nom in (Charger-TriosFavoris)) { [void]$script:TriosFavoris.Add($nom) }
         RafraichirListeTrios
         Afficher-Boite "Config restauree ($nombreRestaures fichier(s) trouve(s) dans l'archive)." "Restauration terminee" "OK" "Info" | Out-Null
     } catch {
