@@ -7,6 +7,21 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif urgent : la barre bloquante ralentissait vraiment le traitement (16/10/2026, Tomyn :
+## "ça bloque complètement la prix ça fait 5 minutes que j'attends, d'habitude ça se trouve pas si
+## longtemps")
+
+$form.Enabled = $false (ajouté juste avant pour bloquer les clics pendant l'overlay) ralentissait
+réellement le remappage du maillage, pas juste visuellement - très probablement un conflit de
+focus/activation entre la fenêtre principale désactivée et l'overlay TopMost au-dessus, qui
+ralentit la boucle de messages Windows pendant les DoEvents() fréquents de cette étape. Retiré :
+l'overlay reste affiché par-dessus (toujours visible, toujours dans le style de l'appli) mais la
+fenêtre principale n'est plus désactivée - les boutons d'action restent désactivés individuellement
+comme avant, donc rien de nouveau n'est déclenchable pendant le traitement, juste sans le
+ralentissement.
+
+---
+
 ## Vraie barre de progression bloquante, par-dessus l'appli (16/10/2026, Tomyn : "trop discrete, il
 ## faudrait un vrai barre de progression qui se mete au dessus de l'appli et qui bloque toutes
 ## action sur les appli tant qu'elle n'est pas finie, style comme sur les photo que je viens de

@@ -4672,7 +4672,14 @@ function Afficher-OverlayProgression([string]$titre) {
         ($form.Location.X + [int](($form.Width - $overlayProgression.Width) / 2)),
         ($form.Location.Y + [int](($form.Height - $overlayProgression.Height) / 2))
     )
-    $form.Enabled = $false
+    # 16/10/2026, Tomyn : "ça bloque complètement, ça fait 5 minutes, c'était pas si long avant" -
+    # $form.Enabled = $false (retire) est la seule vraie nouveaute de cette fenetre, donc tres
+    # probablement la cause (conflit de focus/activation entre une fenetre desactivee et une autre
+    # TopMost au-dessus, qui ralentit la boucle de messages Windows pendant les DoEvents() frequents
+    # du remappage). L'overlay reste affiche par-dessus (toujours visible) mais la fenetre
+    # principale n'est plus desactivee - les boutons d'action (Lancer, Parcourir, etc.) sont deja
+    # desactives individuellement a cote de cet appel, donc rien de nouveau n'est declenchable
+    # pendant le traitement, juste sans le ralentissement.
     $overlayProgression.Show()
     $overlayProgression.BringToFront()
     [System.Windows.Forms.Application]::DoEvents()
@@ -4688,8 +4695,6 @@ function Mettre-A-Jour-OverlayProgression([int]$pct, [string]$titre = $null) {
 
 function Masquer-OverlayProgression {
     $overlayProgression.Hide()
-    $form.Enabled = $true
-    $form.Activate()
 }
 
 $labelJournal = New-Object System.Windows.Forms.Label
