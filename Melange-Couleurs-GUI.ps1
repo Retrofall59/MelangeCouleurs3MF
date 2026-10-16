@@ -988,19 +988,42 @@ function Mettre-A-Jour-ApercuTrioSelectionne {
     }
 
     try {
-        $aire = Obtenir-AireCouvertureTrio $trioSelectionne
-        $seuil = Obtenir-SeuilAvertissementCouverture
-        if ($seuil -gt 0) {
-            $ratio = [Math]::Round($aire / $seuil, 1)
-            if ($aire -lt $seuil) {
-                $labelCouvertureTrio.Text = "Couverture : etroite (x$ratio du seuil d'alerte) - risque de melanges repetitifs"
+        # 16/10/2026, Tomyn ("tu peux tout faire") : si un fichier .3mf est deja charge dans le
+        # champ principal, affiche la VRAIE couverture de CE fichier avec le trio selectionne
+        # (meme calcul que le bouton "Verifier la couverture du fichier..."), au lieu du score
+        # theorique du trio seul - plus utile pour comparer plusieurs trios sur le fichier en
+        # cours sans avoir a cliquer sur ce bouton a chaque changement. $txtFichier est cree PLUS
+        # BAS dans le fichier (meme situation que $panneauxPastilles/$menuTrio en tete de fonction,
+        # resolu seulement a l'appel). Repli silencieux sur l'ancien score theorique si aucun
+        # fichier n'est charge ou si la lecture echoue (fichier introuvable/invalide) -
+        # comportement d'origine inchange dans ces cas.
+        $resultatReel = $null
+        if ($txtFichier -and $txtFichier.Text -and (Test-Path $txtFichier.Text)) {
+            $resultatReel = Verifier-CouvertureFichier $txtFichier.Text $trioSelectionne
+        }
+        if ($resultatReel) {
+            if ($resultatReel.NombreMalCouvertes -gt 0) {
+                $labelCouvertureTrio.Text = "Couverture sur ce fichier : $($resultatReel.NombreMalCouvertes)/$($resultatReel.NombreCouleurs) couleur(s) a risque (ecart moyen $([Math]::Round($resultatReel.EcartMoyen, 1)))"
                 $labelCouvertureTrio.ForeColor = $THEME.AccentChaud
             } else {
-                $labelCouvertureTrio.Text = "Couverture : large (x$ratio du seuil d'alerte)"
+                $labelCouvertureTrio.Text = "Couverture sur ce fichier : les $($resultatReel.NombreCouleurs) couleur(s) sont bien rendues"
                 $labelCouvertureTrio.ForeColor = $THEME.TexteSecondaire
             }
         } else {
-            $labelCouvertureTrio.Text = ""
+            $aire = Obtenir-AireCouvertureTrio $trioSelectionne
+            $seuil = Obtenir-SeuilAvertissementCouverture
+            if ($seuil -gt 0) {
+                $ratio = [Math]::Round($aire / $seuil, 1)
+                if ($aire -lt $seuil) {
+                    $labelCouvertureTrio.Text = "Couverture : etroite (x$ratio du seuil d'alerte) - risque de melanges repetitifs"
+                    $labelCouvertureTrio.ForeColor = $THEME.AccentChaud
+                } else {
+                    $labelCouvertureTrio.Text = "Couverture : large (x$ratio du seuil d'alerte)"
+                    $labelCouvertureTrio.ForeColor = $THEME.TexteSecondaire
+                }
+            } else {
+                $labelCouvertureTrio.Text = ""
+            }
         }
     } catch {
         $labelCouvertureTrio.Text = ""
@@ -2955,6 +2978,14 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     return [PSCustomObject]@{ Bitmap = $bmp; NombreDessines = $compteurDessines; NombreTotal = $n; NombreGroupes = $groupes.Count }
 }
 
+# Marqueur d'annulation (16/10/2026, Tomyn : "tu peux tout faire" - idee en passant validee sur
+# l'absence de bouton Annuler sur un lot, contrairement a Coloriser-STL qui en a un) - meme recette
+# que $script:ANNULATION_MARQUEUR/$script:annulationDemandee dans Coloriser-STL-GUI.ps1 : un nom
+# distinct ("...MELANGE...") pour eviter toute confusion si jamais les deux outils finissaient un
+# jour dans le meme processus.
+$script:ANNULATION_MARQUEUR_MELANGE = "__ANNULATION_MELANGE_DEMANDEE__"
+$script:annulationDemandeeMelange = $false
+
 # ============================== TRAITEMENT DU FICHIER .3MF ==============================
 # Meme logique que la version console (voir Melange-Couleurs-3MF.ps1 pour les commentaires
 # detailles sur le format retrouve dans l'exemple de Tomyn) - ici $EcrireLigne est un scriptblock
@@ -2968,7 +2999,14 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
     # remappage du maillage, reconstruction) - pas une mesure exacte du temps reel (le remappage n'a
     # pas de total de triangles connu a l'avance), mais assez pour que la barre avance de facon
     # credible du debut a la fin au lieu de rester figee pendant que le journal texte defile.
-    $rapporterProgres = { param($pct) if ($MettreAJourProgression) { & $MettreAJourProgression $pct } }
+    # Ces memes points de passage servent aussi de points de controle pour l'annulation (bouton
+    # "Annuler" sur l'overlay) : assez frequents pour reagir vite, sans avoir a instrumenter la
+    # boucle de remappage (deja instrumentee separement, voir plus bas) avec une verification en plus.
+    $rapporterProgres = {
+        param($pct)
+        if ($MettreAJourProgression) { & $MettreAJourProgression $pct }
+        if ($script:annulationDemandeeMelange) { throw $script:ANNULATION_MARQUEUR_MELANGE }
+    }
     $primairesRGB = @($trio | ForEach-Object { Obtenir-RGBDepuisHex $_.Hex })
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
@@ -3778,6 +3816,9 @@ $txtFichier.Add_DragDrop({
     Mettre-A-Jour-SelecteurMelanges $elements[0]
     Mettre-A-Jour-AlerteDejaTraite $elements[0]
     Sauvegarder-DernierFichier $elements[0]
+    # 16/10/2026 : rafraichit l'indicateur de couverture sur ce nouveau fichier tout de suite,
+    # sans attendre que Tomyn change de trio (voir Mettre-A-Jour-ApercuTrioSelectionne plus haut).
+    Mettre-A-Jour-ApercuTrioSelectionne
 })
 $form.Controls.Add($txtFichier)
 
@@ -3795,6 +3836,7 @@ $btnParcourir.Add_Click({
         Mettre-A-Jour-SelecteurMelanges $dialogue.FileName
         Mettre-A-Jour-AlerteDejaTraite $dialogue.FileName
         Sauvegarder-DernierFichier $dialogue.FileName
+        Mettre-A-Jour-ApercuTrioSelectionne
     }
 })
 $form.Controls.Add($btnParcourir)
@@ -4628,7 +4670,7 @@ $overlayProgression.FormBorderStyle = "None"
 $overlayProgression.ShowInTaskbar = $false
 $overlayProgression.TopMost = $true
 $overlayProgression.StartPosition = "Manual"
-$overlayProgression.Size = New-Object System.Drawing.Size(440, 150)
+$overlayProgression.Size = New-Object System.Drawing.Size(440, 192)
 $overlayProgression.BackColor = $THEME.FondBanniere
 
 $labelOverlayTitre = New-Object System.Windows.Forms.Label
@@ -4664,10 +4706,37 @@ $labelOverlayPct.Size = New-Object System.Drawing.Size(400, 24)
 $labelOverlayPct.Text = "0%"
 $overlayProgression.Controls.Add($labelOverlayPct)
 
-function Afficher-OverlayProgression([string]$titre) {
+# Bouton Annuler sur l'overlay (16/10/2026, Tomyn : "tu peux tout faire" - meme recette que
+# $btnAnnulerOverlay dans Coloriser-STL-GUI.ps1) - l'overlay etant TopMost par-dessus toute la
+# fenetre principale, c'est le SEUL endroit possible pour un bouton Annuler pendant le traitement :
+# un bouton sur la fenetre principale serait inaccessible, cache dessous. Masque par defaut
+# ($avecAnnulation = $false dans Afficher-OverlayProgression) : le mode "fichier seul" n'a pas
+# besoin d'annulation (deja tres court), seul le lot l'affiche.
+$btnAnnulerOverlay = New-Object System.Windows.Forms.Button
+$btnAnnulerOverlay.Text = "Annuler"
+$btnAnnulerOverlay.Location = New-Object System.Drawing.Point(170, 135)
+$btnAnnulerOverlay.Size = New-Object System.Drawing.Size(100, 28)
+$btnAnnulerOverlay.FlatStyle = "Flat"
+$btnAnnulerOverlay.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$btnAnnulerOverlay.ForeColor = [System.Drawing.Color]::White
+$btnAnnulerOverlay.BackColor = $THEME.FondBanniere
+$btnAnnulerOverlay.Cursor = "Hand"
+$btnAnnulerOverlay.Visible = $false
+$overlayProgression.Controls.Add($btnAnnulerOverlay)
+$btnAnnulerOverlay.Add_Click({
+    $script:annulationDemandeeMelange = $true
+    $btnAnnulerOverlay.Enabled = $false
+    $btnAnnulerOverlay.Text = "Annulation..."
+})
+
+function Afficher-OverlayProgression([string]$titre, [bool]$avecAnnulation = $false) {
     $labelOverlayTitre.Text = $titre
     $remplissageOverlay.Width = 0
     $labelOverlayPct.Text = "0%"
+    $script:annulationDemandeeMelange = $false
+    $btnAnnulerOverlay.Visible = $avecAnnulation
+    $btnAnnulerOverlay.Enabled = $true
+    $btnAnnulerOverlay.Text = "Annuler"
     $overlayProgression.Location = New-Object System.Drawing.Point(
         ($form.Location.X + [int](($form.Width - $overlayProgression.Width) / 2)),
         ($form.Location.Y + [int](($form.Height - $overlayProgression.Height) / 2))
@@ -5755,7 +5824,9 @@ $btnLancer.Add_Click({
         # TopMost - l'overlay (TopMost) passait devant et empechait de cliquer sur leurs boutons
         # (16/10/2026, Tomyn : "la barre de progression se met devant l'avertissement de la
         # couverture donc chiant parce qu'on peut pas bien cliquer sur le bouton pour accepter").
-        Afficher-OverlayProgression "Melange en cours..."
+        # Bouton Annuler ($avecAnnulation = $true, 16/10/2026 "tu peux tout faire") : utile aussi
+        # sur un fichier seul si le remappage s'avere plus long que prevu sur un gros maillage.
+        Afficher-OverlayProgression "Melange en cours..." $true
         Traiter-Fichier3MF $cheminEntree $cheminSortie $trio $pasChoisi ${function:Ecrire-Journal} ([int]$selecteurMelanges.Value) {
             param($pct)
             Mettre-A-Jour-OverlayProgression $pct
@@ -5776,12 +5847,16 @@ $btnLancer.Add_Click({
             Afficher-Boite "Fichier cree :`r`n$cheminSortie`r`n`r`nRappel : le dosage est une approximation maison, pas garantie identique a celle de Bambu Studio - a verifier avant un gros lot (voir le README)." "Melange termine" "OK" "Info" | Out-Null
         }
     } catch {
-        Ecrire-Journal "ERREUR : $_"
-        if ($nomTrio -and -not $testRapide) { Ajouter-LigneHistorique $nomTrio $cheminEntree "ECHEC : $_" }
-        # Overlay masque AVANT la boite d'erreur (meme raison que plus haut : TopMost, il passerait
-        # devant et empecherait de cliquer sur OK).
+        # Overlay masque AVANT toute boite (erreur ou annulation) - meme raison que plus haut :
+        # TopMost, il passerait devant et empecherait de cliquer sur OK.
         Masquer-OverlayProgression
-        Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
+        if ("$_" -eq $script:ANNULATION_MARQUEUR_MELANGE) {
+            Ecrire-Journal "`r`n=== Annule par l'utilisateur ==="
+        } else {
+            Ecrire-Journal "ERREUR : $_"
+            if ($nomTrio -and -not $testRapide) { Ajouter-LigneHistorique $nomTrio $cheminEntree "ECHEC : $_" }
+            Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
+        }
     } finally {
         if ($cheminSortieTemporaire -and (Test-Path $cheminSortieTemporaire)) {
             Remove-Item -Path $cheminSortieTemporaire -Force -ErrorAction SilentlyContinue
@@ -5937,7 +6012,9 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
     $barreProgresLot.Minimum = 0
     $barreProgresLot.Maximum = $fichiers.Count
     $barreProgresLot.Value = 0
-    Afficher-OverlayProgression "Lot en cours..."
+    # 16/10/2026, Tomyn : "tu peux tout faire" - bouton Annuler ($avecAnnulation = $true), absent
+    # jusqu'ici sur le lot alors que Coloriser-STL l'a depuis le debut sur le sien.
+    Afficher-OverlayProgression "Lot en cours..." $true
     # Chronometre le lot de bout en bout (10/10/2026, Tomyn : "toutes stp") - affiche dans le resume
     # final, pratique pour estimer la duree d'un prochain lot de taille comparable.
     $chronoLot = [System.Diagnostics.Stopwatch]::StartNew()
@@ -5945,6 +6022,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         $reussis = New-Object System.Collections.Generic.List[string]
         $echecs = New-Object System.Collections.Generic.List[string]
         $dernierCheminSortie = $null
+        $interrompu = $false
 
         Ecrire-Journal "Lot de $($fichiers.Count) fichier(s) avec le trio '$nomTrio'."
         Ecrire-Journal ""
@@ -5979,6 +6057,11 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
                 # journal (deja visible a l'ecran pendant le lot, pas besoin d'ouvrir le .log).
                 Ecrire-Journal "OK : $cheminSortie (3 primaires + $nombreMelanges melange(s) detecte(s))"
             } catch {
+                if ("$_" -eq $script:ANNULATION_MARQUEUR_MELANGE) {
+                    Ecrire-Journal "`r`n=== Annule par l'utilisateur (en cours de traitement de $nomCourt) ==="
+                    $interrompu = $true
+                    break
+                }
                 # Un fichier en echec ne doit pas arreter le lot (decide avec Tomyn) - note et
                 # continue sur le suivant.
                 $echecs.Add("$nomCourt : $_")
@@ -5997,7 +6080,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
             "{0:00}m{1:00}s" -f $dureeLot.Minutes, $dureeLot.Seconds
         }
 
-        Ecrire-Journal "=== Lot termine en $dureeTexte : $($reussis.Count) reussi(s), $($echecs.Count) echec(s) ==="
+        Ecrire-Journal "=== Lot termine en $dureeTexte : $($reussis.Count) reussi(s), $($echecs.Count) echec(s)$(if ($interrompu) { ', traitement interrompu' }) ==="
         if ($echecs.Count -gt 0) {
             Ecrire-Journal "Fichiers en echec :"
             foreach ($e in $echecs) { Ecrire-Journal "  - $e" }
@@ -6006,9 +6089,15 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         # Barre de progression de l'overlay forcee a 100% puis disparition automatique (16/10/2026,
         # Tomyn : "il faudrait qu'elle disparaisse au bout d'un certain moment ... au bout de 5 ou 6
         # secondes dès qu'elle est a 100% elle disparait d'elle-meme") - meme comportement que pour
-        # un fichier seul, applique ici a la fin du lot.
-        Mettre-A-Jour-OverlayProgression 100
-        Masquer-OverlayProgressionApresDelai 5
+        # un fichier seul, applique ici a la fin du lot. Sauf si annule (16/10/2026, "tu peux tout
+        # faire") : l'overlay doit alors disparaitre tout de suite, pas rester plante a un
+        # pourcentage intermediaire pendant 5 secondes.
+        if (-not $interrompu) {
+            Mettre-A-Jour-OverlayProgression 100
+            Masquer-OverlayProgressionApresDelai 5
+        } else {
+            Masquer-OverlayProgression
+        }
 
         if ($dernierCheminSortie) { Mettre-A-Jour-Apercu $pictureApres "apres" $dernierCheminSortie }
 
@@ -6036,10 +6125,11 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
             if ($echecs.Count -gt 0) { [System.Media.SystemSounds]::Exclamation.Play() } else { [System.Media.SystemSounds]::Asterisk.Play() }
         } catch { }
 
-        $messageResume = "Lot termine en $dureeTexte.`r`n`r`nReussis : $($reussis.Count)`r`nEchecs : $($echecs.Count)"
+        $titreResume = if ($interrompu) { "Lot annule" } else { "Lot termine" }
+        $messageResume = "$titreResume en $dureeTexte.`r`n`r`nReussis : $($reussis.Count)`r`nEchecs : $($echecs.Count)"
         if ($echecs.Count -gt 0) { $messageResume += "`r`n`r`nVoir le journal pour le detail des echecs." }
         $messageResume += "`r`n`r`nRappel : le dosage est une approximation maison - a verifier avant un gros lot (voir le README)."
-        Afficher-Boite $messageResume "Lot termine" "OK" "Info" | Out-Null
+        Afficher-Boite $messageResume $titreResume "OK" "Info" | Out-Null
     } finally {
         $btnLancer.Enabled = $true
         $btnParcourir.Enabled = $true
@@ -6109,6 +6199,7 @@ if ($fichierADemarrer) {
         Mettre-A-Jour-Apercu $pictureAvant "avant" $fichierADemarrer
         Mettre-A-Jour-SelecteurMelanges $fichierADemarrer
         Mettre-A-Jour-AlerteDejaTraite $fichierADemarrer
+        Mettre-A-Jour-ApercuTrioSelectionne
     } catch { }
 }
 

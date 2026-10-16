@@ -7,6 +7,33 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Trois ameliorations validees d'un coup ("tu peux tout faire", 16/10/2026) : bouton Annuler sur
+## le lot, indicateur de couverture en direct sur le vrai fichier
+
+**Bouton "Annuler" ajoute sur le lot (et sur un fichier seul).** Jusqu'ici, contrairement a
+Coloriser-STL, il n'existait aucun moyen d'interrompre un lot en cours - il fallait attendre la
+fin ou fermer l'appli. Le bouton Annuler vit sur l'overlay de progression lui-meme (seul endroit
+accessible pendant le traitement, l'overlay etant au-dessus de tout) : un clic marque l'annulation,
+verifiee a chaque point de passage deja existant de Traiter-Fichier3MF (memes points que la barre
+de progression - lecture, dosages, ecriture config, remappage, reconstruction), donc aucune
+instrumentation supplementaire necessaire dans la boucle de remappage. Sur un lot, le fichier en
+cours est abandonne et le lot s'arrete la (pas de reprise automatique du fichier interrompu - a
+relancer a la main si besoin, comme pour un echec classique) ; le resume final indique "Lot annule"
+plutot que "Lot termine".
+
+**Indicateur de couverture en direct, sur le VRAI fichier charge, pas juste sur le trio en
+theorie.** Le petit texte "Couverture : etroite/large" sous le trio choisi ne regardait jusqu'ici
+que l'ecartement theorique des 3 couleurs du trio entre elles, sans tenir compte des couleurs
+reelles du fichier .3mf ouvert - il fallait cliquer "Verifier la couverture du fichier..." pour
+avoir une vraie reponse sur CE fichier. Desormais, dès qu'un fichier est charge (ouverture,
+glisser-deposer, ou rechargement automatique du dernier fichier au demarrage), ce texte affiche le
+VRAI resultat ("Couverture sur ce fichier : X/Y couleur(s) a risque") et se met a jour tout seul a
+chaque changement de trio dans le menu - plus besoin de cliquer sur le bouton de verification a
+chaque trio teste. Repli silencieux sur l'ancien score theorique si aucun fichier n'est charge ou
+si la lecture echoue.
+
+---
+
 ## L'overlay de progression ne passe plus devant les avertissements qu'il faut encore valider
 ## (16/10/2026, Tomyn : "la barre de progression se met devant l'avertissement de la couverture
 ## donc chiant parce qu'on peut pas bien cliquer sur le bouton pour accepter")
