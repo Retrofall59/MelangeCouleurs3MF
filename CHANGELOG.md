@@ -7,6 +7,20 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Vraie barre de progression bloquante, par-dessus l'appli (16/10/2026, Tomyn : "trop discrete, il
+## faudrait un vrai barre de progression qui se mete au dessus de l'appli et qui bloque toutes
+## action sur les appli tant qu'elle n'est pas finie, style comme sur les photo que je viens de
+## t'envoyer, bien sur dans le style de l'application")
+
+La barre au-dessus du journal (entrée juste en dessous) ne suffisait pas. Nouvelle fenêtre sans
+bordure, toujours au premier plan, aux couleurs de l'appli (violet foncé + remplissage orange),
+affichée centrée par-dessus la fenêtre principale pendant tout le traitement (lancement simple
+fichier ou lot) - la fenêtre principale est désactivée en dessous le temps du traitement. Pilotée
+par le même callback de progression ajouté à Traiter-Fichier3MF ci-dessous (en lot, la progression
+globale combine fichier courant/total ET avancement à l'intérieur du fichier en cours).
+
+---
+
 ## Barre de progression visuelle pour "Lancer le mélange" (16/10/2026, Tomyn : "le texte
 ## d'avancement c'est bien mais c'est abstrait, faudrait plutot une barre de progression en plus,
 ## c'est plus visuel")

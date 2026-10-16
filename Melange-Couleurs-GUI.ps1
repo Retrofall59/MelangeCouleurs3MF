@@ -4614,6 +4614,84 @@ $barreProgresLot.Visible = $false
 $form.Controls.Add($barreProgresLot)
 $yActuel += 28
 
+# 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete au
+# dessus de l'appli et qui bloque toutes action sur les appli tant qu'elle n'est pas finie, style
+# comme sur les photo que je viens de t'envoyer, bien sur dans le style de l'application" - la fine
+# barre au-dessus du journal (ci-dessus) ne suffit pas : il veut un vrai recouvrement central,
+# bloquant, dans les couleurs de l'appli (meme principe visuel que l'ecran de lancement "splash"
+# plus haut : piste violette sombre + remplissage orange). $form.Enabled = $false pendant que cette
+# fenetre est affichee empeche tout clic sur la fenetre principale en dessous - un simple
+# Form.Show() (pas ShowDialog, qui bloquerait le thread et empecherait les DoEvents() necessaires
+# pendant le traitement) suffit puisque TopMost la garde au-dessus.
+$overlayProgression = New-Object System.Windows.Forms.Form
+$overlayProgression.FormBorderStyle = "None"
+$overlayProgression.ShowInTaskbar = $false
+$overlayProgression.TopMost = $true
+$overlayProgression.StartPosition = "Manual"
+$overlayProgression.Size = New-Object System.Drawing.Size(440, 150)
+$overlayProgression.BackColor = $THEME.FondBanniere
+
+$labelOverlayTitre = New-Object System.Windows.Forms.Label
+$labelOverlayTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$labelOverlayTitre.ForeColor = [System.Drawing.Color]::White
+$labelOverlayTitre.BackColor = [System.Drawing.Color]::Transparent
+$labelOverlayTitre.AutoSize = $false
+$labelOverlayTitre.TextAlign = "MiddleCenter"
+$labelOverlayTitre.Location = New-Object System.Drawing.Point(20, 25)
+$labelOverlayTitre.Size = New-Object System.Drawing.Size(400, 28)
+$overlayProgression.Controls.Add($labelOverlayTitre)
+
+$pisteOverlay = New-Object System.Windows.Forms.Panel
+$pisteOverlay.Location = New-Object System.Drawing.Point(30, 75)
+$pisteOverlay.Size = New-Object System.Drawing.Size(380, 10)
+$pisteOverlay.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+$overlayProgression.Controls.Add($pisteOverlay)
+
+$remplissageOverlay = New-Object System.Windows.Forms.Panel
+$remplissageOverlay.Location = New-Object System.Drawing.Point(0, 0)
+$remplissageOverlay.Size = New-Object System.Drawing.Size(0, 10)
+$remplissageOverlay.BackColor = $THEME.AccentChaud
+$pisteOverlay.Controls.Add($remplissageOverlay)
+
+$labelOverlayPct = New-Object System.Windows.Forms.Label
+$labelOverlayPct.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+$labelOverlayPct.ForeColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$labelOverlayPct.BackColor = [System.Drawing.Color]::Transparent
+$labelOverlayPct.AutoSize = $false
+$labelOverlayPct.TextAlign = "MiddleCenter"
+$labelOverlayPct.Location = New-Object System.Drawing.Point(20, 95)
+$labelOverlayPct.Size = New-Object System.Drawing.Size(400, 24)
+$labelOverlayPct.Text = "0%"
+$overlayProgression.Controls.Add($labelOverlayPct)
+
+function Afficher-OverlayProgression([string]$titre) {
+    $labelOverlayTitre.Text = $titre
+    $remplissageOverlay.Width = 0
+    $labelOverlayPct.Text = "0%"
+    $overlayProgression.Location = New-Object System.Drawing.Point(
+        ($form.Location.X + [int](($form.Width - $overlayProgression.Width) / 2)),
+        ($form.Location.Y + [int](($form.Height - $overlayProgression.Height) / 2))
+    )
+    $form.Enabled = $false
+    $overlayProgression.Show()
+    $overlayProgression.BringToFront()
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Mettre-A-Jour-OverlayProgression([int]$pct, [string]$titre = $null) {
+    if ($titre) { $labelOverlayTitre.Text = $titre }
+    $pctBorne = [Math]::Max(0, [Math]::Min(100, $pct))
+    $remplissageOverlay.Width = [int]($pisteOverlay.Width * $pctBorne / 100)
+    $labelOverlayPct.Text = "$pctBorne%"
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Masquer-OverlayProgression {
+    $overlayProgression.Hide()
+    $form.Enabled = $true
+    $form.Activate()
+}
+
 $labelJournal = New-Object System.Windows.Forms.Label
 $labelJournal.Text = "Avancement :"
 $labelJournal.Location = New-Object System.Drawing.Point(15, $yActuel)
@@ -5604,14 +5682,9 @@ $btnLancer.Add_Click({
     $btnLotFichiers.Enabled = $false
     $testRapide = $caseTestRapide.Checked
     $cheminSortieTemporaire = $null
-    # 16/10/2026, Tomyn : "le texte d'avancement c'est bien mais c'est abstrait, faudrait plutot une
-    # barre de progression en plus" - reutilise la barre deja existante pour le lot (meme
-    # emplacement, juste au-dessus du journal), vu qu'elle n'etait jusqu'ici jamais montree pour un
-    # lancement simple fichier.
-    $barreProgresLot.Visible = $true
-    $barreProgresLot.Minimum = 0
-    $barreProgresLot.Maximum = 100
-    $barreProgresLot.Value = 0
+    # 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete au
+    # dessus de l'appli et qui bloque toutes action" - voir Afficher-OverlayProgression plus haut.
+    Afficher-OverlayProgression "Melange en cours..."
     try {
         $nomTrio = $menuTrio.SelectedItem.ToString()
         $trio = $TRIOS[$nomTrio]
@@ -5659,8 +5732,7 @@ $btnLancer.Add_Click({
         Ecrire-Journal ""
         Traiter-Fichier3MF $cheminEntree $cheminSortie $trio $pasChoisi ${function:Ecrire-Journal} ([int]$selecteurMelanges.Value) {
             param($pct)
-            $barreProgresLot.Value = [Math]::Max(0, [Math]::Min(100, $pct))
-            [System.Windows.Forms.Application]::DoEvents()
+            Mettre-A-Jour-OverlayProgression $pct
         }.GetNewClosure()
 
         if ($testRapide) {
@@ -5684,7 +5756,7 @@ $btnLancer.Add_Click({
         if ($cheminSortieTemporaire -and (Test-Path $cheminSortieTemporaire)) {
             Remove-Item -Path $cheminSortieTemporaire -Force -ErrorAction SilentlyContinue
         }
-        $barreProgresLot.Visible = $false
+        Masquer-OverlayProgression
         $btnLancer.Enabled = $true
         $btnParcourir.Enabled = $true
         $menuTrio.Enabled = $true
@@ -5835,6 +5907,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
     $barreProgresLot.Minimum = 0
     $barreProgresLot.Maximum = $fichiers.Count
     $barreProgresLot.Value = 0
+    Afficher-OverlayProgression "Lot en cours..."
     # Chronometre le lot de bout en bout (10/10/2026, Tomyn : "toutes stp") - affiche dans le resume
     # final, pratique pour estimer la duree d'un prochain lot de taille comparable.
     $chronoLot = [System.Diagnostics.Stopwatch]::StartNew()
@@ -5851,7 +5924,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
             $i++
             $nomCourt = [System.IO.Path]::GetFileName($fichier)
             $labelProgresLot.Text = "Fichier $i / $($fichiers.Count) : $nomCourt"
-            [System.Windows.Forms.Application]::DoEvents()
+            Mettre-A-Jour-OverlayProgression ([int](($i - 1) / $fichiers.Count * 100)) "Fichier $i / $($fichiers.Count) : $nomCourt"
             Ecrire-Journal "--- [$i/$($fichiers.Count)] $nomCourt ---"
             try {
                 if (-not (Test-Path $fichier)) { throw "fichier introuvable" }
@@ -5864,7 +5937,10 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
                     $detecte = Obtenir-NombreCouleursDetectees $fichier
                     if ($detecte -gt 0) { $nombreMelanges = [Math]::Min($detecte, 29) }
                 } catch { }
-                Traiter-Fichier3MF $fichier $cheminSortie $trio ([int]$selecteurPrecision.Value) ${function:Ecrire-Journal} $nombreMelanges
+                Traiter-Fichier3MF $fichier $cheminSortie $trio ([int]$selecteurPrecision.Value) ${function:Ecrire-Journal} $nombreMelanges {
+                    param($pct)
+                    Mettre-A-Jour-OverlayProgression ([int]((($i - 1) + ($pct / 100.0)) / $fichiers.Count * 100))
+                }.GetNewClosure()
                 $reussis.Add($cheminSortie)
                 $dernierCheminSortie = $cheminSortie
                 Ajouter-LigneHistorique $nomTrio $fichier "OK -> $cheminSortie"
@@ -5935,6 +6011,7 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         $btnLotFichiers.Enabled = $true
         $labelProgresLot.Visible = $false
         $barreProgresLot.Visible = $false
+        Masquer-OverlayProgression
     }
 }
 
