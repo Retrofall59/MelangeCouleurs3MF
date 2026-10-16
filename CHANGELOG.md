@@ -7,6 +7,21 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## La barre de progression disparaît maintenant seule, quelques secondes après 100% (16/10/2026,
+## Tomyn : "la barre de progression quand elle est arrivée à 100% elle reste, il faut que je
+## reclique de l'application pour qu'elle disparaisse, il faudrait qu'elle disparaisse au bout
+## d'un certain moment ... au bout de 5 ou 6 secondes dès qu'elle est à 100% elle disparaît
+## d'elle-même")
+
+Jusqu'ici l'overlay restait affiché jusqu'au clic sur la boîte de dialogue de fin qui suit, aussi
+bien pour un fichier seul que pour un lot. Nouvelle fonction Masquer-OverlayProgressionApresDelai
+(boucle non-bloquante avec DoEvents(), pas un simple Start-Sleep, pour garder l'IHM réactive
+pendant l'attente) : une fois le traitement terminé, la barre est forcée à 100% puis l'overlay se
+referme tout seul 5 secondes plus tard, sans que Tomyn ait besoin de cliquer sur quoi que ce soit
+avant.
+
+---
+
 ## Correctif urgent : la barre bloquante ralentissait vraiment le traitement (16/10/2026, Tomyn :
 ## "ça bloque complètement la prix ça fait 5 minutes que j'attends, d'habitude ça se trouve pas si
 ## longtemps")
