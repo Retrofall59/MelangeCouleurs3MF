@@ -7,6 +7,29 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Galerie de tous les resultats d'un lot, et temps restant estime (ETA) ("Ok pour tout", 16/10/2026)
+
+**Galerie montrant TOUS les resultats reussis d'un lot, pas seulement le dernier.** Jusqu'ici, a la
+fin d'un lot, seul l'apercu "apres" principal etait mis a jour, avec le DERNIER fichier traite -
+aucune vue d'ensemble des autres resultats. Une nouvelle fenetre s'ouvre maintenant automatiquement
+a la fin d'un lot reussi (au moins un fichier OK), avec une carte par fichier : nom, bouton "Ouvrir
+le dossier" et bouton "Afficher l'apercu" qui charge le rendu 3D a la demande plutot que pour
+chaque resultat d'un coup - le rendu maison (meme fonction que l'apercu avant/apres principal) est
+deja signale lent par Tomyn sur un seul fichier, le charger automatiquement pour chaque resultat
+d'un gros lot aurait fige la fenetre inutilement si seuls quelques fichiers interessent. L'apercu
+"apres" principal continue par ailleurs d'afficher le dernier fichier comme avant, sans changement.
+
+**Temps restant estime (ETA) pendant un lot**, meme principe que Coloriser-STL : moyenne glissante
+(temps ecoule / fichiers faits x fichiers restants), affiche a la fois sous la liste de fichiers et
+dans le titre de l'overlay de progression bloquant.
+
+Comme pour le reste de ce fichier, non teste en conditions reelles faute de Windows disponible ici
+(calcul de l'ETA verifie isolement par un petit script PowerShell de test, mais pas l'affichage
+reel ni le rendu de la nouvelle fenetre, System.Drawing/GDI+ n'etant pas disponible dans ce
+bac a sable Linux) : a valider par Tomyn a l'usage.
+
+---
+
 ## Trois ameliorations validees d'un coup ("tu peux tout faire", 16/10/2026) : bouton Annuler sur
 ## le lot, indicateur de couverture en direct sur le vrai fichier
 

@@ -4678,6 +4678,7 @@ $labelOverlayTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12
 $labelOverlayTitre.ForeColor = [System.Drawing.Color]::White
 $labelOverlayTitre.BackColor = [System.Drawing.Color]::Transparent
 $labelOverlayTitre.AutoSize = $false
+$labelOverlayTitre.AutoEllipsis = $true
 $labelOverlayTitre.TextAlign = "MiddleCenter"
 $labelOverlayTitre.Location = New-Object System.Drawing.Point(20, 25)
 $labelOverlayTitre.Size = New-Object System.Drawing.Size(400, 28)
@@ -5985,6 +5986,112 @@ function Lancer-LotDepuisDossier([string]$dossier) {
     Afficher-ConfirmationLot $fichiers $nomTrio $trio
 }
 
+# Estimation du temps restant sur un lot (16/10/2026, Tomyn : "ok pour tout" sur l'idee en passant
+# "ETA") - moyenne glissante simple (temps ecoule / fichiers deja faits) x fichiers restants, pas
+# une vraie prediction (un gros fichier au milieu du lot peut la faire sauter d'un coup), mais
+# largement suffisant pour se faire une idee sur un lot de 250 fichiers plutot que de n'avoir que
+# le chrono ecoule. Retourne une chaine vide tant qu'aucun fichier n'est encore termine (pas
+# d'estimation fiable sur un seul point de mesure) - $nombreFaits est le compte APRES le dernier
+# fichier termine, pas le fichier en cours de traitement.
+function Obtenir-TexteEtaLot([System.Diagnostics.Stopwatch]$chrono, [int]$nombreFaits, [int]$nombreTotal) {
+    if ($nombreFaits -le 0 -or $nombreFaits -ge $nombreTotal) { return "" }
+    $dureeMoyenneParFichier = $chrono.Elapsed.TotalSeconds / $nombreFaits
+    $secondesRestantes = $dureeMoyenneParFichier * ($nombreTotal - $nombreFaits)
+    $resteTxt = if ($secondesRestantes -ge 3600) {
+        "{0}h{1:00}" -f [int]([Math]::Floor($secondesRestantes / 3600)), [int]([Math]::Floor(($secondesRestantes % 3600) / 60))
+    } elseif ($secondesRestantes -ge 60) {
+        "~{0} min" -f [int][Math]::Ceiling($secondesRestantes / 60)
+    } else {
+        "moins d'1 min"
+    }
+    return " - reste $resteTxt"
+}
+
+# Galerie des resultats d'un lot (16/10/2026, idee d'amelioration validee "Ok pour tout") - jusqu'ici
+# seul le DERNIER fichier traite s'affichait dans l'apercu "apres" principal a la fin d'un lot (voir
+# $dernierCheminSortie plus bas) ; cette fenetre liste TOUS les fichiers reussis. L'apercu de chaque
+# vignette est charge A LA DEMANDE (bouton "Afficher l'apercu"), pas automatiquement au chargement -
+# le rendu 3D maison (Nouvelle-ImageApercu, cf. Mettre-A-Jour-Apercu) est deja signale lent par Tomyn
+# sur un seul fichier ("ultra long") ; le charger d'un coup pour chaque resultat d'un gros lot
+# figerait cette fenetre pour rien si Tomyn ne veut regarder que quelques fichiers. Reutilise
+# directement Mettre-A-Jour-Apercu (meme fonction que pour "avant"/"apres") avec une cle ("lot_resultat_N")
+# propre a chaque vignette - $script:ApercuEtat accepte n'importe quelle cle, et les lookups de
+# label/bouton Stop associes a une cle inconnue sont deja geres (valent $null, usages gardes par
+# "if (...)" partout dans Mettre-A-Jour-Apercu) donc aucune case particuliere a ajouter la-bas.
+function Afficher-FenetreResultatsLot([array]$cheminsReussis) {
+    if (-not $cheminsReussis -or $cheminsReussis.Count -eq 0) { return }
+
+    $fenetre = New-Object System.Windows.Forms.Form
+    $fenetre.Text = "Resultats du lot ($($cheminsReussis.Count) fichier(s))"
+    $fenetre.StartPosition = "CenterParent"
+    $fenetre.Size = New-Object System.Drawing.Size(900, 640)
+    $fenetre.MinimumSize = New-Object System.Drawing.Size(500, 400)
+    $fenetre.BackColor = $THEME.FondApp
+
+    $flow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flow.Dock = "Fill"
+    $flow.AutoScroll = $true
+    $flow.WrapContents = $true
+    $flow.Padding = New-Object System.Windows.Forms.Padding(10)
+    $fenetre.Controls.Add($flow)
+
+    $largeurVignette = 190
+    $hauteurVignette = 190
+
+    $index = 0
+    foreach ($chemin in $cheminsReussis) {
+        $index++
+        $carte = New-Object System.Windows.Forms.Panel
+        $carte.Size = New-Object System.Drawing.Size(($largeurVignette + 16), 300)
+        $carte.BackColor = $THEME.Surface
+        $carte.Margin = New-Object System.Windows.Forms.Padding(8)
+        Definir-RegionArrondie $carte 10
+
+        $image = New-Object System.Windows.Forms.PictureBox
+        $image.Location = New-Object System.Drawing.Point(8, 8)
+        $image.Size = New-Object System.Drawing.Size($largeurVignette, $hauteurVignette)
+        $image.SizeMode = "Zoom"
+        $image.BackColor = $THEME.FondApp
+        $image.BorderStyle = "FixedSingle"
+        $carte.Controls.Add($image)
+
+        $labelNom = New-Object System.Windows.Forms.Label
+        $labelNom.Text = [System.IO.Path]::GetFileName($chemin)
+        $labelNom.Location = New-Object System.Drawing.Point(8, 202)
+        $labelNom.Size = New-Object System.Drawing.Size($largeurVignette, 18)
+        $labelNom.AutoEllipsis = $true
+        $labelNom.ForeColor = $THEME.Texte
+        $carte.Controls.Add($labelNom)
+
+        $btnApercu = New-Object System.Windows.Forms.Button
+        $btnApercu.Text = "Afficher l'apercu"
+        $btnApercu.Location = New-Object System.Drawing.Point(8, 224)
+        $btnApercu.Size = New-Object System.Drawing.Size($largeurVignette, 26)
+        Rendre-BoutonPlat $btnApercu "secondaire"
+        $cleVignette = "lot_resultat_$index"
+        $cheminCapture = $chemin
+        $btnApercu.Add_Click({
+            $btnApercu.Enabled = $false
+            Mettre-A-Jour-Apercu $image $cleVignette $cheminCapture
+        }.GetNewClosure())
+        $carte.Controls.Add($btnApercu)
+
+        $btnDossier = New-Object System.Windows.Forms.Button
+        $btnDossier.Text = "Ouvrir le dossier"
+        $btnDossier.Location = New-Object System.Drawing.Point(8, 254)
+        $btnDossier.Size = New-Object System.Drawing.Size($largeurVignette, 26)
+        Rendre-BoutonPlat $btnDossier "discret"
+        $btnDossier.Add_Click({
+            if (Test-Path $cheminCapture) { Start-Process -FilePath "explorer.exe" -ArgumentList "/select,`"$cheminCapture`"" }
+        }.GetNewClosure())
+        $carte.Controls.Add($btnDossier)
+
+        $flow.Controls.Add($carte)
+    }
+
+    $fenetre.ShowDialog($form) | Out-Null
+}
+
 # Traitement en lot (10/10/2026, Tomyn : "je voudrais arriver a terme ... voir un dossier complet")
 # - meme logique que le traitement fichier unique ci-dessus (Traiter-Fichier3MF), mais en boucle sur
 # plusieurs fichiers, APPELE SEQUENTIELLEMENT (pas en parallele - plus simple, et Traiter-Fichier3MF
@@ -6031,8 +6138,9 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         foreach ($fichier in $fichiers) {
             $i++
             $nomCourt = [System.IO.Path]::GetFileName($fichier)
-            $labelProgresLot.Text = "Fichier $i / $($fichiers.Count) : $nomCourt"
-            Mettre-A-Jour-OverlayProgression ([int](($i - 1) / $fichiers.Count * 100)) "Fichier $i / $($fichiers.Count) : $nomCourt"
+            $etaTexte = Obtenir-TexteEtaLot $chronoLot ($i - 1) $fichiers.Count
+            $labelProgresLot.Text = "Fichier $i / $($fichiers.Count) : $nomCourt$etaTexte"
+            Mettre-A-Jour-OverlayProgression ([int](($i - 1) / $fichiers.Count * 100)) "Fichier $i / $($fichiers.Count) : $nomCourt$etaTexte"
             Ecrire-Journal "--- [$i/$($fichiers.Count)] $nomCourt ---"
             try {
                 if (-not (Test-Path $fichier)) { throw "fichier introuvable" }
@@ -6130,6 +6238,10 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         if ($echecs.Count -gt 0) { $messageResume += "`r`n`r`nVoir le journal pour le detail des echecs." }
         $messageResume += "`r`n`r`nRappel : le dosage est une approximation maison - a verifier avant un gros lot (voir le README)."
         Afficher-Boite $messageResume $titreResume "OK" "Info" | Out-Null
+
+        # Galerie de TOUS les resultats reussis du lot (16/10/2026, "Ok pour tout") - en plus de
+        # l'apercu "apres" principal mis a jour ci-dessus avec seulement le dernier fichier.
+        if ($reussis.Count -gt 0) { Afficher-FenetreResultatsLot @($reussis) }
     } finally {
         $btnLancer.Enabled = $true
         $btnParcourir.Enabled = $true
