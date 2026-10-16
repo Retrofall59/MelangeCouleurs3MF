@@ -12,7 +12,11 @@
 ' -ExecutionPolicy Bypass evite toute configuration manuelle, pour cette seule execution (rien
 ' n'est modifie de facon permanente sur la machine).
 
-Dim objFSO, objShell, strDossier, strCheminScript, strCommande
+' 16/10/2026 : accepte maintenant un argument optionnel - le chemin d'un .3mf a charger
+' automatiquement au demarrage (passerelle depuis Coloriser-STL, bouton "Analyser les couleurs"
+' sur un resultat de galerie). Sans argument, comportement inchange (double-clic normal).
+
+Dim objFSO, objShell, strDossier, strCheminScript, strCommande, strFichierInitial
 
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 strDossier = objFSO.GetParentFolderName(WScript.ScriptFullName)
@@ -20,4 +24,8 @@ strCheminScript = strDossier & "\Melange-Couleurs-GUI.ps1"
 
 Set objShell = CreateObject("WScript.Shell")
 strCommande = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & strCheminScript & """"
+If WScript.Arguments.Count > 0 Then
+    strFichierInitial = WScript.Arguments(0)
+    strCommande = strCommande & " -FichierInitial """ & strFichierInitial & """"
+End If
 objShell.Run strCommande, 0, False

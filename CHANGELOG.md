@@ -7,6 +7,19 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Passerelle depuis Coloriser-STL : -FichierInitial (16/10/2026)
+
+Côté Coloriser-STL, chaque résultat .3mf a maintenant un bouton "Analyser les couleurs..." qui
+lance cet outil directement sur ce fichier (voir le changelog de Coloriser-STL). Pour que ça
+marche : `Lancer-Melange-Couleurs.vbs` accepte un argument optionnel (le chemin du .3mf) qu'il
+transmet à `Melange-Couleurs-GUI.ps1` via un nouveau paramètre `-FichierInitial`. Au démarrage,
+s'il est fourni et que le fichier existe toujours, il passe devant le "dernier fichier utilisé"
+habituel (plus pertinent : c'est le résultat que Tomyn vient d'obtenir), et devient lui-même le
+nouveau "dernier fichier" pour la prochaine fois. Sans argument (double-clic normal), rien ne
+change.
+
+---
+
 ## Sauvegarde/restauration : couleurs individuelles et trios favoris ajoutés (16/10/2026)
 
 Tomyn a demandé un export/import de "config (couleurs + trios favoris)" pour pouvoir sauvegarder ou

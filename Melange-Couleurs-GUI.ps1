@@ -29,6 +29,15 @@ RESERVES IMPORTANTES (les memes que la version console - voir le README du dossi
 =================================================================================================
 #>
 
+# -FichierInitial (16/10/2026, passerelle depuis Coloriser-STL : "Analyser les couleurs" sur un
+# resultat de galerie) - chemin d'un .3mf a charger automatiquement au demarrage, a la place du
+# dernier fichier utilise, pour eviter a Tomyn de devoir rouvrir/re-selectionner a la main le
+# fichier qu'il vient juste de coloriser dans l'autre outil. Facultatif : sans cet argument,
+# comportement inchange (reprend le dernier fichier utilise comme avant).
+param(
+    [string]$FichierInitial
+)
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -5872,13 +5881,24 @@ $btnLotFichiers.Add_Click({
 # coup") - tous les controles necessaires ($txtFichier, $pictureAvant, Mettre-A-Jour-*) existent
 # deja a ce stade. Test-Path d'abord : si le fichier a ete deplace/renomme/supprime depuis, on ne
 # fait simplement rien (pas de message d'erreur au demarrage pour si peu).
-$dernierFichierCharge = Charger-DernierFichier
-if ($dernierFichierCharge -and (Test-Path $dernierFichierCharge)) {
+# 16/10/2026 : -FichierInitial (passerelle depuis Coloriser-STL) passe devant le dernier fichier
+# utilise s'il est fourni et existe toujours - c'est le resultat que Tomyn vient d'obtenir dans
+# l'autre outil, donc plus pertinent que l'ancien fichier. Sauvegarde aussi comme "dernier fichier"
+# pour que ce choix survive au prochain lancement normal (sans argument) de l'outil.
+$fichierADemarrer = $null
+if ($FichierInitial -and (Test-Path $FichierInitial)) {
+    $fichierADemarrer = $FichierInitial
+    Sauvegarder-DernierFichier $fichierADemarrer
+} else {
+    $dernierFichierCharge = Charger-DernierFichier
+    if ($dernierFichierCharge -and (Test-Path $dernierFichierCharge)) { $fichierADemarrer = $dernierFichierCharge }
+}
+if ($fichierADemarrer) {
     try {
-        $txtFichier.Text = $dernierFichierCharge
-        Mettre-A-Jour-Apercu $pictureAvant "avant" $dernierFichierCharge
-        Mettre-A-Jour-SelecteurMelanges $dernierFichierCharge
-        Mettre-A-Jour-AlerteDejaTraite $dernierFichierCharge
+        $txtFichier.Text = $fichierADemarrer
+        Mettre-A-Jour-Apercu $pictureAvant "avant" $fichierADemarrer
+        Mettre-A-Jour-SelecteurMelanges $fichierADemarrer
+        Mettre-A-Jour-AlerteDejaTraite $fichierADemarrer
     } catch { }
 }
 
