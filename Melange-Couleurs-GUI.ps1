@@ -2260,7 +2260,16 @@ function Obtenir-MeilleureComboDepuisCouleursPourFichier([array]$couleursFichier
                 $combo = @($couleurs[$i], $couleurs[$j], $couleurs[$k])
                 $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $combo
                 if (-not $resultat) { continue }
-                if (-not $meilleurResultat -or $resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
+                # 17/10/2026, Tomyn : cas reel ou un vert olive etait "zappe" par le classement - un
+                # combo qui couvre TOUTES les couleurs (0 mal rendue) doit gagner face a un combo avec
+                # une moyenne plus basse mais qui en laisse au moins une mal rendue : une seule
+                # couleur ratee se voit plus, a l'oeil, qu'un dixieme d'ecart gagne sur les autres. On
+                # compare donc d'abord le nombre de couleurs mal rendues (le plus bas gagne), et
+                # seulement a egalite on departage sur la moyenne (comme avant).
+                $estMeilleur = (-not $meilleurResultat) -or
+                    ($resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
+                    (($resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
+                if ($estMeilleur) {
                     $meilleurResultat = $resultat
                     $meilleurCombo = $combo
                 }
@@ -2656,8 +2665,24 @@ function Verifier-CouvertureAvecCouleurs($couleurs, $trio) {
             $seuilEffectif = $seuilEcart
             if ($labCible.L -lt 25) { $seuilEffectif += (25 - $labCible.L) * 0.8 }
             $estMalRendue = $meilleur.Distance -gt $seuilEffectif
+            # 17/10/2026, Tomyn (fichier avec du vert olive, trio BEIGE+ARGENT+NOIR) : ce trio n'a
+            # AUCUNE primaire tirant vers le vert (les 3 ont R>=G) - or un melange en lumiere lineaire
+            # est une combinaison convexe des primaires, qui ne peut donc jamais, lui non plus,
+            # produire G>R : viser une teinte verte est structurellement hors de portee, quel que soit
+            # le dosage essaye. Le meilleur dosage trouve ici (ecart ~9) restait sous le seuil de 12 et
+            # ne declenchait donc AUCUNE alerte, alors que le resultat ne ressemble pas, meme un peu, a
+            # la couleur visee - parce que l'ecart Lab total est domine par la LUMINOSITE (L*, ou la
+            # cible sombre et le meilleur dosage se ressemblent), ce qui noie un ecart de TEINTE (a*/b*)
+            # qui saute lui aux yeux. On calcule donc en plus un ecart "teinte seule" (a*/b* sans le L*)
+            # et on marque aussi la couleur mal rendue si CET ecart depasse son propre seuil (8, plus
+            # strict que les 12 globaux puisqu'il isole justement ce que l'ecart total peut diluer) -
+            # independamment du resultat du test precedent.
+            $labResultat = Convertir-RGBVersLab $meilleur.Resultat.R $meilleur.Resultat.G $meilleur.Resultat.B
+            $ecartTeinte = [Math]::Sqrt([Math]::Pow($labCible.a - $labResultat.a, 2) + [Math]::Pow($labCible.b - $labResultat.b, 2))
+            $seuilTeinte = 8.0
+            if ($ecartTeinte -gt $seuilTeinte) { $estMalRendue = $true }
             if ($estMalRendue) { $nombreMalCouvertes++ }
-            [void]$details.Add(@{ Hex = $hex; Distance = $meilleur.Distance; MalRendue = $estMalRendue; SeuilApplique = $seuilEffectif })
+            [void]$details.Add(@{ Hex = $hex; Distance = $meilleur.Distance; MalRendue = $estMalRendue; SeuilApplique = $seuilEffectif; EcartTeinte = $ecartTeinte })
         } catch { }
     }
     if ($distances.Count -eq 0) { return $null }
@@ -4432,17 +4457,38 @@ $btnSuggererTrio.Add_Click({
         # SelectedIndexChanged) - pas besoin d'un second clic "Appliquer" separe.
         if ($menuTrio.Items.Contains($meilleurNom)) { $menuTrio.SelectedItem = $meilleurNom }
         $messageResultat = "Trio applique : $meilleurNom`r`n`r`nEcart Lab moyen sur ce fichier : $([Math]::Round($meilleurResultat.EcartMoyen, 1))`r`n$($meilleurResultat.NombreMalCouvertes) couleur(s) sur $($meilleurResultat.NombreCouleurs) risquent d'etre visiblement mal rendues."
-        if ($meilleurResultat.EcartMoyen -gt 12.0) {
-            $messageResultat += "`r`n`r`nMeme le meilleur de tes trios reste moyen sur ce fichier (ecart > 12)."
-            # Aucun trio sauvegarde ne convient bien - avant de conclure qu'il faut en racheter,
-            # on cherche aussi dans le stock de couleurs individuelles (12/10/2026, Tomyn : "s'il
-            # trouve pas le trio adequat ... propose ca ca et la ca marche") une combinaison de 3
-            # qui ferait mieux, meme si elle n'a jamais ete sauvegardee comme trio.
+        # 17/10/2026, Tomyn : cas reel (fichier avec du vert olive) ou le trio applique ici laissait
+        # UNE couleur largement hors cible alors que la MOYENNE des 4 couleurs du fichier restait
+        # bonne (diluee par les 3 autres, bien couvertes) - la recherche elargie ci-dessous ne se
+        # declenchait donc jamais, et cette couleur etait "zappee" en silence, sans le moindre
+        # avertissement ("Toutes les couleurs sont bien couvertes" affiche a tort). Le declencheur
+        # n'est plus seulement "moyenne > 12" : il suffit maintenant qu'UNE SEULE couleur du fichier
+        # soit mal rendue (NombreMalCouvertes > 0, meme calcul que le rapport de couverture) pour
+        # aller chercher une meilleure combinaison, meme si la moyenne globale semble correcte.
+        if ($meilleurResultat.EcartMoyen -gt 12.0 -or $meilleurResultat.NombreMalCouvertes -gt 0) {
+            if ($meilleurResultat.EcartMoyen -gt 12.0) {
+                $messageResultat += "`r`n`r`nMeme le meilleur de tes trios reste moyen sur ce fichier (ecart > 12)."
+            } else {
+                $messageResultat += "`r`n`r`nLa moyenne est correcte, mais $($meilleurResultat.NombreMalCouvertes) couleur(s) sur $($meilleurResultat.NombreCouleurs) restent mal rendues avec ce trio."
+            }
+            # Le trio sauvegarde choisi laisse au moins une couleur mal rendue (moyenne bonne ou pas) -
+            # avant de conclure qu'il faut en racheter, on cherche aussi dans le stock de couleurs
+            # individuelles (12/10/2026, Tomyn : "s'il trouve pas le trio adequat ... propose ca ca et
+            # la ca marche") une combinaison de 3 qui ferait mieux, meme si elle n'a jamais ete
+            # sauvegardee comme trio.
             if ($script:MesCouleurs.Count -ge 3) {
                 $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
-                if ($meilleureComboStock -and $meilleureComboStock.Resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
+                # 17/10/2026 : "mieux" se juge d'abord sur le nombre de couleurs mal rendues (le plus
+                # bas gagne), et seulement a egalite sur la moyenne - memes raisons que dans
+                # Obtenir-MeilleureComboDepuisCouleursPourFichier ci-dessus (une couleur ratee pese
+                # plus, a l'oeil, qu'un dixieme d'ecart moyen gagne sur les autres).
+                $comboEstMeilleure = $meilleureComboStock -and (
+                    ($meilleureComboStock.Resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
+                    (($meilleureComboStock.Resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($meilleureComboStock.Resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
+                )
+                if ($comboEstMeilleure) {
                     $nomsComboStock = ($meilleureComboStock.Composants | ForEach-Object { $_.Nom }) -join " + "
-                    $messageResultat += "`r`n`r`nEn revanche, dans tes couleurs individuelles (Gerer mes couleurs...), la combinaison '$nomsComboStock' ferait mieux : ecart moyen $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 1)) au lieu de $([Math]::Round($meilleurResultat.EcartMoyen, 1))."
+                    $messageResultat += "`r`n`r`nEn revanche, dans tes couleurs individuelles (Gerer mes couleurs...), la combinaison '$nomsComboStock' ferait mieux : $($meilleureComboStock.Resultat.NombreMalCouvertes) couleur(s) mal rendue(s) (ecart moyen $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 1))) au lieu de $($meilleurResultat.NombreMalCouvertes) (ecart moyen $([Math]::Round($meilleurResultat.EcartMoyen, 1)))."
                     Afficher-Boite $messageResultat "Trio suggere" "OK" "Info" | Out-Null
                     if ((Afficher-Boite "Veux-tu l'enregistrer comme nouveau trio et l'appliquer tout de suite ?" "Nouvelle combinaison trouvee" "YesNo" "Question") -eq [System.Windows.Forms.DialogResult]::Yes) {
                         $nomSauvegarde = Demander-NomEtSauvegarderTrio $form $meilleureComboStock.Composants
