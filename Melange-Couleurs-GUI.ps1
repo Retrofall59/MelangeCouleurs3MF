@@ -477,6 +477,28 @@ function Booster-SaturationRGB($rgb, [double]$facteur) {
     return Convertir-HSLVersRGB $hsl.H $sBoostee $hsl.L
 }
 
+# 17/10/2026, Tomyn : un facteur de boost UNIQUE pour tout le fichier ne marche pas - teste a
+# +40% (Booster-SaturationRGB ci-dessus), "pas encore assez pour le marron mais trop pour
+# l'olive". Logique : les deux couleurs ne perdent pas la meme quantite de saturation pendant le
+# melange (modele "pigments" plus ou moins terne selon le trio et la teinte visee), donc un seul
+# pourcentage fixe surcorrige l'une ou sous-corrige l'autre.
+# Remplace par un rattrapage ADAPTATIF, par melange : compare la saturation du resultat A la
+# saturation de SA PROPRE couleur cible d'origine (celle du fichier avant melange, $cibleRGB dans
+# Traiter-Fichier3MF) et ne rattrape qu'une partie (tauxRattrapage, 0-1) de l'ecart perdu. Un
+# melange qui perd beaucoup de saturation (le marron, dans le cas de Tomyn) se fait rattraper
+# fort ; un melange qui en perd peu (l'olive) n'est presque pas touche - sans bouton par couleur,
+# purement a partir de ce qui a ete reellement perdu pendant LE melange physique de chaque
+# couleur. Si le resultat est deja AUSSI ou PLUS sature que sa cible (pas de perte, ou gain), rien
+# n'est touche - on ne pousse jamais au-dela de ce que demandait la couleur d'origine.
+function Rattraper-SaturationRGB($resultatRGB, $cibleRGB, [double]$tauxRattrapage) {
+    $hslResultat = Convertir-RGBVersHSL $resultatRGB.R $resultatRGB.G $resultatRGB.B
+    $hslCible = Convertir-RGBVersHSL $cibleRGB.R $cibleRGB.G $cibleRGB.B
+    if ($hslCible.S -le $hslResultat.S) { return $resultatRGB }
+    $ecartPerdu = $hslCible.S - $hslResultat.S
+    $sRattrapee = [Math]::Min(1.0, $hslResultat.S + ($ecartPerdu * $tauxRattrapage))
+    return Convertir-HSLVersRGB $hslResultat.H $sRattrapee $hslResultat.L
+}
+
 function Convertir-RGBVersLab([double]$r, [double]$g, [double]$b) {
     $rl = ConvertTo-Lineaire $r
     $gl = ConvertTo-Lineaire $g
@@ -3377,10 +3399,12 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # couleur suffit comme cible.
             $cibleRGB = if ($membres.Count -eq 1) { $rgbMembres[0] } else { Melanger-EnLumiereLineaire $rgbMembres $ratiosEgaux }
             $meilleur = Trouver-MeilleurDosage $cibleRGB $primairesRGB $pasPourcent
-            # Boost de saturation (17/10/2026, voir Booster-SaturationRGB) applique ICI seulement,
-            # APRES le choix du dosage - $meilleur.Distance ci-dessous (log, "ecart Lab") reste donc
-            # la vraie fidelite du melange physique choisi, non boostee.
-            $resultatBooste = Booster-SaturationRGB $meilleur.Resultat 1.4
+            # Rattrapage de saturation ADAPTATIF (17/10/2026, voir Rattraper-SaturationRGB) applique
+            # ICI seulement, APRES le choix du dosage - $meilleur.Distance ci-dessous (log, "ecart
+            # Lab") reste donc la vraie fidelite du melange physique choisi, non modifiee. Compare au
+            # $cibleRGB de CE groupe (deja calcule juste au-dessus) - chaque melange est donc rattrape
+            # selon ce qu'IL a reellement perdu, pas un pourcentage unique pour tout le fichier.
+            $resultatBooste = Rattraper-SaturationRGB $meilleur.Resultat $cibleRGB 0.6
             $dosages += [PSCustomObject]@{
                 ResultatRGB = $resultatBooste
                 ResultatHex = Obtenir-HexDepuisRGB $resultatBooste.R $resultatBooste.G $resultatBooste.B
