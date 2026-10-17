@@ -413,6 +413,67 @@ function Obtenir-HexDepuisRGB([int]$r, [int]$g, [int]$b) {
     return "#{0:X2}{1:X2}{2:X2}" -f $r, $g, $b
 }
 
+# 17/10/2026, Tomyn (apres le passage au modele de melange "pigments" ci-dessous) : "le marron est
+# un peu delave ainsi que le vert olive, faudrait changer la saturation du fichier de sortie pour
+# compenser". Normal : un vrai melange de pigments reste physiquement plus terne qu'une couleur
+# numerique pure (c'est justement ce que le modele Mixbox simule). Boost PUREMENT cosmetique,
+# applique uniquement a la couleur ECRITE dans le fichier de sortie (voir Traiter-Fichier3MF) -
+# touche ni le dosage (%) choisi, ni l'ecart Lab calcule pour le choisir : la fidelite du melange
+# reel et les alertes "mal rendu" restent basees sur la vraie couleur du melange, non boostee.
+# Conversion RGB -> HSL -> boost de S (+20%, fixe - demande expresse de Tomyn, pas de reglage
+# dans l'interface) -> RGB, implementation standard (voir par ex. la formule de conversion HSL du
+# W3C), rien de specifique a ce projet.
+function Convertir-RGBVersHSL([double]$r, [double]$g, [double]$b) {
+    $r /= 255.0; $g /= 255.0; $b /= 255.0
+    $max = [Math]::Max($r, [Math]::Max($g, $b))
+    $min = [Math]::Min($r, [Math]::Min($g, $b))
+    $l = ($max + $min) / 2.0
+    if ($max -eq $min) {
+        return @{ H = 0.0; S = 0.0; L = $l }
+    }
+    $d = $max - $min
+    $s = if ($l -gt 0.5) { $d / (2.0 - $max - $min) } else { $d / ($max + $min) }
+    $h = switch ($max) {
+        $r { (($g - $b) / $d) + (if ($g -lt $b) { 6.0 } else { 0.0 }) }
+        $g { (($b - $r) / $d) + 2.0 }
+        default { (($r - $g) / $d) + 4.0 }
+    }
+    $h /= 6.0
+    return @{ H = $h; S = $s; L = $l }
+}
+
+function Convertir-HSLVersRGB([double]$h, [double]$s, [double]$l) {
+    if ($s -eq 0.0) {
+        $v = [int]([Math]::Round($l * 255.0))
+        return @{ R = $v; G = $v; B = $v }
+    }
+    $HueVersRGB = {
+        param($p, $q, $t)
+        if ($t -lt 0.0) { $t += 1.0 }
+        if ($t -gt 1.0) { $t -= 1.0 }
+        if ($t -lt (1.0 / 6.0)) { return $p + ($q - $p) * 6.0 * $t }
+        if ($t -lt 0.5) { return $q }
+        if ($t -lt (2.0 / 3.0)) { return $p + ($q - $p) * ((2.0 / 3.0) - $t) * 6.0 }
+        return $p
+    }
+    $q = if ($l -lt 0.5) { $l * (1.0 + $s) } else { $l + $s - ($l * $s) }
+    $p = (2.0 * $l) - $q
+    $r = & $HueVersRGB $p $q ($h + (1.0 / 3.0))
+    $g = & $HueVersRGB $p $q $h
+    $b = & $HueVersRGB $p $q ($h - (1.0 / 3.0))
+    return @{
+        R = [Math]::Min(255, [Math]::Max(0, [int]([Math]::Round($r * 255.0))))
+        G = [Math]::Min(255, [Math]::Max(0, [int]([Math]::Round($g * 255.0))))
+        B = [Math]::Min(255, [Math]::Max(0, [int]([Math]::Round($b * 255.0))))
+    }
+}
+
+function Booster-SaturationRGB($rgb, [double]$facteur) {
+    $hsl = Convertir-RGBVersHSL $rgb.R $rgb.G $rgb.B
+    $sBoostee = [Math]::Min(1.0, $hsl.S * $facteur)
+    return Convertir-HSLVersRGB $hsl.H $sBoostee $hsl.L
+}
+
 function Convertir-RGBVersLab([double]$r, [double]$g, [double]$b) {
     $rl = ConvertTo-Lineaire $r
     $gl = ConvertTo-Lineaire $g
@@ -3313,9 +3374,13 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # couleur suffit comme cible.
             $cibleRGB = if ($membres.Count -eq 1) { $rgbMembres[0] } else { Melanger-EnLumiereLineaire $rgbMembres $ratiosEgaux }
             $meilleur = Trouver-MeilleurDosage $cibleRGB $primairesRGB $pasPourcent
+            # Boost de saturation (17/10/2026, voir Booster-SaturationRGB) applique ICI seulement,
+            # APRES le choix du dosage - $meilleur.Distance ci-dessous (log, "ecart Lab") reste donc
+            # la vraie fidelite du melange physique choisi, non boostee.
+            $resultatBooste = Booster-SaturationRGB $meilleur.Resultat 1.2
             $dosages += [PSCustomObject]@{
-                ResultatRGB = $meilleur.Resultat
-                ResultatHex = Obtenir-HexDepuisRGB $meilleur.Resultat.R $meilleur.Resultat.G $meilleur.Resultat.B
+                ResultatRGB = $resultatBooste
+                ResultatHex = Obtenir-HexDepuisRGB $resultatBooste.R $resultatBooste.G $resultatBooste.B
                 Dosage      = $meilleur.Dosage
             }
             $resume = ($trio | ForEach-Object -Begin { $k = 0 } -Process {
