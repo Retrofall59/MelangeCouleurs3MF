@@ -3445,7 +3445,13 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # ($dosages[$g].ResultatHex, deja calcule juste au-dessus) plutot que la couleur CIBLE
             # ($hexCible, deja affichee en texte) - c'est precisement l'ecart entre les deux que
             # "ecart Lab" mesure, donc la pastille montre ce que le dosage donne vraiment.
-            & $EcrireLigne ("Melange {0} ({1}) -> {2}  (ecart Lab {3:N1})" -f ($g + 1), $hexCible, $resume, $meilleur.Distance) $dosages[$g].ResultatHex
+            # 18/10/2026, Tomyn ("on devrait savoir les hex codes... et voir si c'est le meme") :
+            # jusqu'ici le hex REELLEMENT obtenu n'existait QUE sous forme de pastille coloree,
+            # jamais en texte - invisible une fois le journal copie/colle (voir le bouton "Copier le
+            # journal" ajoute plus tot ce soir, precisement pour ce genre d'echange). Ajoute
+            # $dosages[$g].ResultatHex en texte, a cote de la cible, pour que les deux soient
+            # comparables tels quels une fois colles ici.
+            & $EcrireLigne ("Melange {0} ({1} -> {2})  {3}  (ecart Lab {4:N1})" -f ($g + 1), $hexCible, $dosages[$g].ResultatHex, $resume, $meilleur.Distance) $dosages[$g].ResultatHex
             & $rapporterProgres ([int](10 + (($g + 1) / [Math]::Max(1, $nombreMelanges)) * 20))
         }
         & $EcrireLigne ""
