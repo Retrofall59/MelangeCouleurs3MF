@@ -661,13 +661,14 @@ function Melanger-FilamentsPigment($primairesRGB, [double[]]$ratios) {
 # peut atteindre a la fois la bonne teinte ET la bonne clarte, la recherche peut choisir de
 # sacrifier beaucoup de clarte (resultat plus sombre) pour ne gagner qu'un tout petit peu de
 # teinte, les deux pesant pareil dans le calcul.
-# Sous-pondere donc L* (poids 0.5) mais UNIQUEMENT pour CHOISIR le dosage ci-dessous - jamais pour
+# Sous-pondere donc L* (poids 0.25 - 0.5 de depart encore trop sombre sur un cas reel de Tomyn,
+# vert olive) mais UNIQUEMENT pour CHOISIR le dosage ci-dessous - jamais pour
 # les ecarts Lab affiches/compares ailleurs (seuils "mal rendu" a 12.0/8.0, rapports de couverture,
 # comparaison de trios...), qui restent calcules avec la vraie distance Obtenir-DistanceLab (sur le
 # dosage une fois choisi, voir $distanceFinale plus bas) pour rester coherents avec ces seuils deja
 # calibres dessus.
 function Obtenir-DistanceLabPondereePourChoixDosage($lab1, $lab2) {
-    $dl = ($lab1.L - $lab2.L) * 0.5
+    $dl = ($lab1.L - $lab2.L) * 0.25
     $da = $lab1.a - $lab2.a
     $db = $lab1.b - $lab2.b
     return [Math]::Sqrt($dl * $dl + $da * $da + $db * $db)
