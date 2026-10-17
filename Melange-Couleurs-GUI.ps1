@@ -424,7 +424,7 @@ function Obtenir-HexDepuisRGB([int]$r, [int]$g, [int]$b) {
 # l'interface) -> RGB, implementation standard (voir par ex. la formule de conversion HSL du
 # W3C), rien de specifique a ce projet. Valeur du boost : voir l'appel a Booster-SaturationRGB
 # dans Traiter-Fichier3MF plus bas (17/10/2026 : +20% de depart juge trop fort par Tomyn sur son
-# cas reel -> ramene a +10%).
+# cas reel -> +10% encore trop -> +5%).
 function Convertir-RGBVersHSL([double]$r, [double]$g, [double]$b) {
     $r /= 255.0; $g /= 255.0; $b /= 255.0
     $max = [Math]::Max($r, [Math]::Max($g, $b))
@@ -3379,7 +3379,7 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # Boost de saturation (17/10/2026, voir Booster-SaturationRGB) applique ICI seulement,
             # APRES le choix du dosage - $meilleur.Distance ci-dessous (log, "ecart Lab") reste donc
             # la vraie fidelite du melange physique choisi, non boostee.
-            $resultatBooste = Booster-SaturationRGB $meilleur.Resultat 1.1
+            $resultatBooste = Booster-SaturationRGB $meilleur.Resultat 1.05
             $dosages += [PSCustomObject]@{
                 ResultatRGB = $resultatBooste
                 ResultatHex = Obtenir-HexDepuisRGB $resultatBooste.R $resultatBooste.G $resultatBooste.B
