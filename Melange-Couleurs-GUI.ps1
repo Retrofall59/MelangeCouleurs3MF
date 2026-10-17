@@ -4678,15 +4678,28 @@ $btnSuggererTrio.Add_Click({
         foreach ($nom in $candidats) {
             $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
             if (-not $resultat) { continue }
-            [void]$resultatsTousLesCandidats.Add(@{ Nom = $nom; Ecart = $resultat.EcartMoyen })
-            if (-not $meilleurResultat -or $resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen) {
+            [void]$resultatsTousLesCandidats.Add(@{ Nom = $nom; Ecart = $resultat.EcartMoyen; MalCouvertes = $resultat.NombreMalCouvertes })
+            # 18/10/2026, Tomyn : "j'ai des trios avec du cyan, il me les propose pas, tu me dis
+            # qu'il propose le meilleur mais en fait non" - BUG trouve : ce classement ne comparait
+            # QUE l'ecart moyen, pas le nombre de couleurs mal rendues en premier - contrairement a
+            # Obtenir-MeilleureComboDepuisCouleursPourFichier (17/10/2026, ecart teinte) et a la
+            # comparaison trio sauvegarde vs stock juste plus bas, qui appliquent deja "moins de
+            # mal rendues gagne d'abord, la moyenne ne departage qu'a egalite". Resultat : un trio
+            # SANS cyan, bon sur presque toutes les couleurs avec une bonne moyenne, pouvait battre
+            # un trio AVEC cyan qui couvre tout correctement mais avec une moyenne legerement moins
+            # bonne - exactement l'inverse de ce que Tomyn attend. Meme regle appliquee ici
+            # maintenant, pour que les 3 points de comparaison du fichier restent coherents entre eux.
+            $estMeilleur = (-not $meilleurResultat) -or
+                ($resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
+                (($resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
+            if ($estMeilleur) {
                 $meilleurNom = $nom
                 $meilleurResultat = $resultat
             }
         }
         Ecrire-Journal "--- Suggestion de trio pour $(Split-Path $cheminAVerifier -Leaf) ($($resultatsTousLesCandidats.Count) trio(s) teste(s)) : ---"
-        foreach ($r in ($resultatsTousLesCandidats | Sort-Object Ecart)) {
-            Ecrire-Journal ("  $($r.Nom) : ecart $([Math]::Round($r.Ecart, 3))")
+        foreach ($r in ($resultatsTousLesCandidats | Sort-Object MalCouvertes, Ecart)) {
+            Ecrire-Journal ("  $($r.Nom) : $($r.MalCouvertes) mal rendue(s), ecart $([Math]::Round($r.Ecart, 3))")
         }
         if (-not $meilleurResultat) {
             Afficher-Boite "Impossible de lire les couleurs de ce fichier (pas un .3mf Bambu Studio avec des couleurs enregistrees ?)." "Lecture impossible" "OK" "Warning" | Out-Null
