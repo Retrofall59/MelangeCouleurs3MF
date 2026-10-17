@@ -434,7 +434,7 @@ function Convertir-RGBVersHSL([double]$r, [double]$g, [double]$b) {
     $d = $max - $min
     $s = if ($l -gt 0.5) { $d / (2.0 - $max - $min) } else { $d / ($max + $min) }
     $h = switch ($max) {
-        $r { (($g - $b) / $d) + (if ($g -lt $b) { 6.0 } else { 0.0 }) }
+        $r { (($g - $b) / $d) + $(if ($g -lt $b) { 6.0 } else { 0.0 }) }
         $g { (($b - $r) / $d) + 2.0 }
         default { (($r - $g) / $d) + 4.0 }
     }
