@@ -652,31 +652,22 @@ function Melanger-FilamentsPigment($primairesRGB, [double[]]$ratios) {
     return $courant
 }
 
-# 17/10/2026, Tomyn : "est-ce que ton calcul est pas trop agressif, c'est pour ca qu'il propose un
-# trio/dosage plus sombre qu'il ne le devrait ?" - Obtenir-DistanceLab (distance Lab standard,
-# utilisee pour choisir le dosage juste en dessous) traite L* (clarte) et a*/b* (teinte) a EGALITE
-# mathematique. Mais a l'oeil, une difference de TEINTE de tel ou tel ordre de grandeur se voit
-# bien plus facilement qu'une difference de CLARTE du MEME ordre - rien dans la distance Lab brute
-# ne reflete cette asymetrie perceptuelle. Consequence possible : quand aucun dosage du trio ne
-# peut atteindre a la fois la bonne teinte ET la bonne clarte, la recherche peut choisir de
-# sacrifier beaucoup de clarte (resultat plus sombre) pour ne gagner qu'un tout petit peu de
-# teinte, les deux pesant pareil dans le calcul.
-# Sous-pondere donc L* (poids 0.25 - 0.5 de depart encore trop sombre sur un cas reel de Tomyn,
-# vert olive) mais UNIQUEMENT pour CHOISIR le dosage ci-dessous - jamais pour
-# les ecarts Lab affiches/compares ailleurs (seuils "mal rendu" a 12.0/8.0, rapports de couverture,
-# comparaison de trios...), qui restent calcules avec la vraie distance Obtenir-DistanceLab (sur le
-# dosage une fois choisi, voir $distanceFinale plus bas) pour rester coherents avec ces seuils deja
-# calibres dessus.
-function Obtenir-DistanceLabPondereePourChoixDosage($lab1, $lab2) {
-    $dl = ($lab1.L - $lab2.L) * 0.25
-    $da = $lab1.a - $lab2.a
-    $db = $lab1.b - $lab2.b
-    return [Math]::Sqrt($dl * $dl + $da * $da + $db * $db)
-}
-
+# 18/10/2026, Tomyn (fichier reel, trio PINK+GOLD+BLACK, cible olive #404A3A) : "avant que tu
+# modifies [ce fichier], meme avec ce trio-la, ca ne me faisait pas ca [un resultat quasi noir]."
+# Verifie, et il avait raison : la sous-ponderation de L* ci-dessous (ajoutee le 17/10/2026 suite a
+# "ton calcul est pas trop agressif ?", poids 0.5 puis 0.25) etait une MAUVAISE idee sur ce cas
+# precis. Recalcule independamment pour les 4 couleurs du fichier : sur 3 des 4, aucun changement
+# (meme dosage ponderee ou pas) ; sur la 4e (l'olive, justement), la version ponderee choisit PINK
+# 10% + GOLD 20% + BLACK 70% (-> #282F1D, ecart Lab REEL 12.14) au lieu de PINK 20% + GOLD 20% +
+# BLACK 60% (-> #423E2E, ecart Lab REEL 7.70) sans ponderation - PLUS sombre (+10% de noir) ET
+# OBJECTIVEMENT PIRE sur la vraie distance Lab (12.14 contre 7.70, 58% pire), pour un gain
+# minuscule sur la teinte ponderee qui ne valait pas la perte en clarte. Revient donc purement et
+# simplement a Obtenir-DistanceLab (distance Lab standard, non ponderee) pour choisir le dosage -
+# l'idee de sous-ponderer L* pour "prioriser la teinte" semblait raisonnable en theorie mais ne
+# tenait pas a l'epreuve d'un vrai cas, donc abandonnee plutot que re-ajustee une fois de plus.
 function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
     $labCible = Convertir-RGBVersLab $cibleRGB.R $cibleRGB.G $cibleRGB.B
-    $meilleureDistancePonderee = [double]::MaxValue
+    $meilleureDistance = [double]::MaxValue
     $meilleurDosage = @(100, 0, 0)
     $meilleurResultat = $primairesRGB[0]
     # Trio = 3 primaires (11/10/2026, Tomyn a verifie que le melange de couleurs dans Bambu Studio
@@ -691,19 +682,15 @@ function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
             # Melanger-EnLumiereLineaire - voir le long commentaire au-dessus de ces deux fonctions.
             $resultat = Melanger-FilamentsPigment $primairesRGB $dosage
             $labResultat = Convertir-RGBVersLab $resultat.R $resultat.G $resultat.B
-            $distancePonderee = Obtenir-DistanceLabPondereePourChoixDosage $labCible $labResultat
-            if ($distancePonderee -lt $meilleureDistancePonderee) {
-                $meilleureDistancePonderee = $distancePonderee
+            $distance = Obtenir-DistanceLab $labCible $labResultat
+            if ($distance -lt $meilleureDistance) {
+                $meilleureDistance = $distance
                 $meilleurDosage = $dosage
                 $meilleurResultat = $resultat
             }
         }
     }
-    # Distance FINALE reportee/comparee ailleurs : la vraie distance Lab (non ponderee) du dosage
-    # retenu - voir le commentaire au-dessus de Obtenir-DistanceLabPondereePourChoixDosage.
-    $labResultatFinal = Convertir-RGBVersLab $meilleurResultat.R $meilleurResultat.G $meilleurResultat.B
-    $distanceFinale = Obtenir-DistanceLab $labCible $labResultatFinal
-    return @{ Dosage = $meilleurDosage; Resultat = $meilleurResultat; Distance = $distanceFinale }
+    return @{ Dosage = $meilleurDosage; Resultat = $meilleurResultat; Distance = $meilleureDistance }
 }
 
 # Regroupement automatique des couleurs detectees en au plus K "melanges" (10/10/2026, demande
