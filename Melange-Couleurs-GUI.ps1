@@ -5408,6 +5408,38 @@ $labelJournal.Location = New-Object System.Drawing.Point(15, $yActuel)
 $labelJournal.AutoSize = $true
 $labelJournal.ForeColor = $THEME.Texte
 $form.Controls.Add($labelJournal)
+
+# 17/10/2026, Tomyn : pas de moyen de recuperer facilement le contenu du journal pour le coller
+# ailleurs (ex. me le montrer pour diagnostiquer un cas reel) - le RichTextBox se copie deja a la
+# main (Ctrl+A puis Ctrl+C dedans), mais un bouton dedie est plus direct. Feedback bref sur le
+# bouton lui-meme ("Copie !" puis retour au texte d'origine apres 1.2s) plutot qu'une boite de
+# dialogue qui interromprait le flux pour une action aussi anodine.
+$btnCopierJournal = New-Object System.Windows.Forms.Button
+$btnCopierJournal.Text = "Copier le journal"
+$btnCopierJournal.Location = New-Object System.Drawing.Point(330, ($yActuel - 2))
+$btnCopierJournal.Size = New-Object System.Drawing.Size(115, 22)
+Rendre-BoutonPlat $btnCopierJournal "discret"
+$btnCopierJournal.Add_Click({
+    if (-not $txtJournal.Text) { return }
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($txtJournal.Text)
+        $texteOrigine = $btnCopierJournal.Text
+        $btnCopierJournal.Text = "Copie !"
+        $btnCopierJournal.Enabled = $false
+        $minuteurCopie = New-Object System.Windows.Forms.Timer
+        $minuteurCopie.Interval = 1200
+        $minuteurCopie.Add_Tick({
+            $minuteurCopie.Stop()
+            $minuteurCopie.Dispose()
+            $btnCopierJournal.Text = $texteOrigine
+            $btnCopierJournal.Enabled = $true
+        }.GetNewClosure())
+        $minuteurCopie.Start()
+    } catch {
+        Ecrire-Journal "(Impossible de copier le journal dans le presse-papiers : $_)"
+    }
+})
+$form.Controls.Add($btnCopierJournal)
 $yActuel += 20
 
 # RichTextBox plutot qu'un simple TextBox (11/10/2026, Tomyn : "1-2-3-4") - meme usage partout
