@@ -453,6 +453,119 @@ function Melanger-EnLumiereLineaire($primairesRGB, [double[]]$ratios) {
     return @{ R = ConvertTo-OctetSRGB $rl; G = ConvertTo-OctetSRGB $gl; B = ConvertTo-OctetSRGB $bl }
 }
 
+# ============================== MODELE DE MELANGE "BAMBU STUDIO" (17/10/2026) ==============================
+# Port du VRAI modele que Bambu Studio utilise pour calculer la couleur resultante d'un "Melange de
+# Filaments" (code source officiel bambulab/BambuStudio, fichier FilamentMixerModel.hpp, licence MIT,
+# autonome et sans dependance - les coefficients sont recopies tels quels, aucune estimation de ma part).
+# Trouve en reponse a un cas reel de Tomyn : un melange rouge+gold+bleu teste A LA MAIN dans Bambu Studio
+# donnait un olive-gris credible, alors que Melanger-EnLumiereLineaire ci-dessus (melange en LUMIERE,
+# comme des DEL) donnait un rose/mauve completement different pour les memes 3 couleurs et le meme
+# dosage. Raison : Bambu Studio ne melange pas en lumiere du tout - il utilise un modele de regression
+# polynomiale (degre 4, 330 coefficients) entraine pour imiter Mixbox, une simulation de melange de
+# PIGMENTS reels (comme de la vraie peinture : "bleu + jaune -> vert", pas un gris comme en lumiere).
+# Verifie caractere pour caractere contre l'exemple donne dans leur propre code source (bleu(0,33,133) +
+# jaune(252,211,0) a 50/50 -> (47,141,56) exactement) avant integration ici.
+# Remplace Melanger-EnLumiereLineaire UNIQUEMENT pour le melange reel de PRIMAIRES (Trouver-MeilleurDosage
+# juste en dessous, donc tout ce qui en decoule : dosages proposes, ecarts Lab, suggestion de trio, et
+# couleur ecrite dans le fichier de sortie) - les deux autres usages de Melanger-EnLumiereLineaire
+# (Regrouper-CouleursParProximite, calcul du "centre" d'un groupe de COULEURS DETECTEES similaires avant
+# tout melange) restent inchanges : ce n'est pas un vrai melange de filaments, juste une moyenne visuelle
+# pour le regroupement, la question posee est differente.
+# A noter : Bambu Studio essaie d'abord une table de couleurs MESUREES (de vrais echantillons imprimes et
+# mesures) avant de retomber sur ce modele polynomial - cette table n'est pas dans leur depot public (pas
+# open source), donc pour une combinaison de couleurs qui s'y trouverait, leur resultat reel peut differer
+# legerement de celui calcule ici. Le modele polynomial reste neanmoins infiniment plus proche de la
+# realite que l'ancien melange en lumiere - verifie sur le cas reel de Tomyn, resultat du meme ordre de
+# grandeur (olive-gris sombre dans les deux cas, plus de rose/mauve).
+$script:FM_POWERS = $null
+$script:FM_COEF = $null
+$script:FM_INTERCEPT = $null
+# Pour chaque ligne du polynome, la liste (index de variable, exposant) des termes NON NULS seulement
+# (la plupart des 7 exposants sont 0 sur chaque ligne) - evite de boucler sur les 7 a chaque evaluation,
+# utile vu le nombre d'appels (recherche de dosage = des dizaines de milliers d'evaluations possibles).
+$script:FM_TERMES = $null
+function Charger-ModeleMelangeFilament {
+    if ($script:FM_POWERS) { return }
+    $chemin = if ($PSScriptRoot) { Join-Path $PSScriptRoot "filament-mixer-model.csv" } else { Join-Path (Get-Location) "filament-mixer-model.csv" }
+    if (-not (Test-Path $chemin)) {
+        throw "filament-mixer-model.csv introuvable a cote du script - necessaire pour calculer les melanges de couleurs (voir Charger-ModeleMelangeFilament). Le fichier doit rester a cote de Melange-Couleurs-GUI.ps1."
+    }
+    $lignes = Get-Content $chemin
+    $powers = New-Object object[] 330
+    $coef = New-Object object[] 330
+    $termes = New-Object object[] 330
+    for ($i = 0; $i -lt 330; $i++) {
+        $p = @($lignes[$i].Split(',') | ForEach-Object { [int]$_ })
+        $powers[$i] = $p
+        $t = New-Object System.Collections.Generic.List[int[]]
+        for ($j = 0; $j -lt 7; $j++) {
+            if ($p[$j] -ne 0) { [void]$t.Add(@($j, $p[$j])) }
+        }
+        $termes[$i] = $t.ToArray()
+    }
+    for ($i = 0; $i -lt 330; $i++) {
+        $coef[$i] = @($lignes[330 + $i].Split(',') | ForEach-Object { [double]::Parse($_, [System.Globalization.CultureInfo]::InvariantCulture) })
+    }
+    $intercept = @($lignes[660].Split(',') | ForEach-Object { [double]::Parse($_, [System.Globalization.CultureInfo]::InvariantCulture) })
+    $script:FM_POWERS = $powers
+    $script:FM_COEF = $coef
+    $script:FM_INTERCEPT = $intercept
+    $script:FM_TERMES = $termes
+}
+
+# Melange DEUX couleurs selon le modele polynomial ci-dessus (port exact de filament_mixer::lerp, le
+# vrai code C++ de Bambu Studio). $t = 0 -> couleur1 pure, $t = 1 -> couleur2 pure.
+function Filament-Mixer-Lerp($rgb1, $rgb2, [double]$t) {
+    if ($t -le 0.0) { return $rgb1 }
+    if ($t -ge 1.0) { return $rgb2 }
+    Charger-ModeleMelangeFilament
+    $x = @([double]$rgb1.R, [double]$rgb1.G, [double]$rgb1.B, [double]$rgb2.R, [double]$rgb2.G, [double]$rgb2.B, $t)
+    $s0 = $script:FM_INTERCEPT[0]; $s1 = $script:FM_INTERCEPT[1]; $s2 = $script:FM_INTERCEPT[2]
+    for ($i = 0; $i -lt 330; $i++) {
+        $val = 1.0
+        foreach ($terme in $script:FM_TERMES[$i]) {
+            $base = $x[$terme[0]]
+            $exp = $terme[1]
+            $pw = 1.0
+            for ($e = 0; $e -lt $exp; $e++) { $pw *= $base }
+            $val *= $pw
+        }
+        if ($val -ne 0.0) {
+            $c = $script:FM_COEF[$i]
+            $s0 += $val * $c[0]; $s1 += $val * $c[1]; $s2 += $val * $c[2]
+        }
+    }
+    $r = [int]$s0; if ($r -lt 0) { $r = 0 } elseif ($r -gt 255) { $r = 255 }
+    $g = [int]$s1; if ($g -lt 0) { $g = 0 } elseif ($g -gt 255) { $g = 255 }
+    $b = [int]$s2; if ($b -lt 0) { $b = 0 } elseif ($b -gt 255) { $b = 255 }
+    return @{ R = $r; G = $g; B = $b }
+}
+
+# Melange N couleurs ponderees, exactement comme blend_color_multi en C++ (code source Bambu Studio) :
+# un enchainement de melanges a DEUX couleurs (pas une moyenne simultanee) - le resultat depend donc de
+# l'ORDRE des couleurs, comme chez Bambu Studio. $ratios : n'importe quelle echelle coherente (%, 0-1...),
+# seul le poids RELATIF entre elles compte - pas besoin de normaliser a l'avance (meme principe que le
+# code source : des poids entiers bruts, jamais rapportes a 100 au prealable).
+function Melanger-FilamentsPigment($primairesRGB, [double[]]$ratios) {
+    $accumule = 0.0
+    $courant = $null
+    for ($i = 0; $i -lt $primairesRGB.Count; $i++) {
+        $poids = $ratios[$i]
+        if ($poids -le 0) { continue }
+        if ($accumule -eq 0.0) {
+            $courant = $primairesRGB[$i]
+            $accumule = $poids
+        } else {
+            $nouveauTotal = $accumule + $poids
+            $t = $poids / $nouveauTotal
+            $courant = Filament-Mixer-Lerp $courant $primairesRGB[$i] $t
+            $accumule = $nouveauTotal
+        }
+    }
+    if ($null -eq $courant) { return @{ R = 0; G = 0; B = 0 } }
+    return $courant
+}
+
 function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
     $labCible = Convertir-RGBVersLab $cibleRGB.R $cibleRGB.G $cibleRGB.B
     $meilleureDistance = [double]::MaxValue
@@ -466,7 +579,9 @@ function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
         for ($b = 0; $b -le (100 - $a); $b += $pas) {
             $c = 100 - $a - $b
             $dosage = @($a, $b, $c)
-            $resultat = Melanger-EnLumiereLineaire $primairesRGB $dosage
+            # 17/10/2026 : Melanger-FilamentsPigment (modele reel de Bambu Studio) remplace ici
+            # Melanger-EnLumiereLineaire - voir le long commentaire au-dessus de ces deux fonctions.
+            $resultat = Melanger-FilamentsPigment $primairesRGB $dosage
             $labResultat = Convertir-RGBVersLab $resultat.R $resultat.G $resultat.B
             $distance = Obtenir-DistanceLab $labCible $labResultat
             if ($distance -lt $meilleureDistance) {
