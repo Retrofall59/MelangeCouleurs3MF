@@ -652,9 +652,30 @@ function Melanger-FilamentsPigment($primairesRGB, [double[]]$ratios) {
     return $courant
 }
 
+# 17/10/2026, Tomyn : "est-ce que ton calcul est pas trop agressif, c'est pour ca qu'il propose un
+# trio/dosage plus sombre qu'il ne le devrait ?" - Obtenir-DistanceLab (distance Lab standard,
+# utilisee pour choisir le dosage juste en dessous) traite L* (clarte) et a*/b* (teinte) a EGALITE
+# mathematique. Mais a l'oeil, une difference de TEINTE de tel ou tel ordre de grandeur se voit
+# bien plus facilement qu'une difference de CLARTE du MEME ordre - rien dans la distance Lab brute
+# ne reflete cette asymetrie perceptuelle. Consequence possible : quand aucun dosage du trio ne
+# peut atteindre a la fois la bonne teinte ET la bonne clarte, la recherche peut choisir de
+# sacrifier beaucoup de clarte (resultat plus sombre) pour ne gagner qu'un tout petit peu de
+# teinte, les deux pesant pareil dans le calcul.
+# Sous-pondere donc L* (poids 0.5) mais UNIQUEMENT pour CHOISIR le dosage ci-dessous - jamais pour
+# les ecarts Lab affiches/compares ailleurs (seuils "mal rendu" a 12.0/8.0, rapports de couverture,
+# comparaison de trios...), qui restent calcules avec la vraie distance Obtenir-DistanceLab (sur le
+# dosage une fois choisi, voir $distanceFinale plus bas) pour rester coherents avec ces seuils deja
+# calibres dessus.
+function Obtenir-DistanceLabPondereePourChoixDosage($lab1, $lab2) {
+    $dl = ($lab1.L - $lab2.L) * 0.5
+    $da = $lab1.a - $lab2.a
+    $db = $lab1.b - $lab2.b
+    return [Math]::Sqrt($dl * $dl + $da * $da + $db * $db)
+}
+
 function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
     $labCible = Convertir-RGBVersLab $cibleRGB.R $cibleRGB.G $cibleRGB.B
-    $meilleureDistance = [double]::MaxValue
+    $meilleureDistancePonderee = [double]::MaxValue
     $meilleurDosage = @(100, 0, 0)
     $meilleurResultat = $primairesRGB[0]
     # Trio = 3 primaires (11/10/2026, Tomyn a verifie que le melange de couleurs dans Bambu Studio
@@ -669,15 +690,19 @@ function Trouver-MeilleurDosage($cibleRGB, $primairesRGB, [int]$pas) {
             # Melanger-EnLumiereLineaire - voir le long commentaire au-dessus de ces deux fonctions.
             $resultat = Melanger-FilamentsPigment $primairesRGB $dosage
             $labResultat = Convertir-RGBVersLab $resultat.R $resultat.G $resultat.B
-            $distance = Obtenir-DistanceLab $labCible $labResultat
-            if ($distance -lt $meilleureDistance) {
-                $meilleureDistance = $distance
+            $distancePonderee = Obtenir-DistanceLabPondereePourChoixDosage $labCible $labResultat
+            if ($distancePonderee -lt $meilleureDistancePonderee) {
+                $meilleureDistancePonderee = $distancePonderee
                 $meilleurDosage = $dosage
                 $meilleurResultat = $resultat
             }
         }
     }
-    return @{ Dosage = $meilleurDosage; Resultat = $meilleurResultat; Distance = $meilleureDistance }
+    # Distance FINALE reportee/comparee ailleurs : la vraie distance Lab (non ponderee) du dosage
+    # retenu - voir le commentaire au-dessus de Obtenir-DistanceLabPondereePourChoixDosage.
+    $labResultatFinal = Convertir-RGBVersLab $meilleurResultat.R $meilleurResultat.G $meilleurResultat.B
+    $distanceFinale = Obtenir-DistanceLab $labCible $labResultatFinal
+    return @{ Dosage = $meilleurDosage; Resultat = $meilleurResultat; Distance = $distanceFinale }
 }
 
 # Regroupement automatique des couleurs detectees en au plus K "melanges" (10/10/2026, demande
@@ -3399,15 +3424,15 @@ function Traiter-Fichier3MF([string]$cheminEntree, [string]$cheminSortie, $trio,
             # couleur suffit comme cible.
             $cibleRGB = if ($membres.Count -eq 1) { $rgbMembres[0] } else { Melanger-EnLumiereLineaire $rgbMembres $ratiosEgaux }
             $meilleur = Trouver-MeilleurDosage $cibleRGB $primairesRGB $pasPourcent
-            # Rattrapage de saturation ADAPTATIF (17/10/2026, voir Rattraper-SaturationRGB) applique
-            # ICI seulement, APRES le choix du dosage - $meilleur.Distance ci-dessous (log, "ecart
-            # Lab") reste donc la vraie fidelite du melange physique choisi, non modifiee. Compare au
-            # $cibleRGB de CE groupe (deja calcule juste au-dessus) - chaque melange est donc rattrape
-            # selon ce qu'IL a reellement perdu, pas un pourcentage unique pour tout le fichier.
-            $resultatBooste = Rattraper-SaturationRGB $meilleur.Resultat $cibleRGB 0.6
+            # 17/10/2026, retour en arriere (Tomyn) : le rattrapage de saturation ci-dessus
+            # (Rattraper-SaturationRGB, garde dans le fichier mais plus appelee ici) ne touchait que
+            # la couleur AFFICHEE, jamais le vrai dosage (%) - or si Bambu Studio recalcule sa propre
+            # pastille a partir des % reels (comme le test manuel de Tomyn le suggere), ce maquillage
+            # est invisible/efface des qu'on retouche aux % dans Bambu Studio. Ecrit de nouveau la
+            # VRAIE couleur du melange physique choisi, sans aucune retouche cosmetique.
             $dosages += [PSCustomObject]@{
-                ResultatRGB = $resultatBooste
-                ResultatHex = Obtenir-HexDepuisRGB $resultatBooste.R $resultatBooste.G $resultatBooste.B
+                ResultatRGB = $meilleur.Resultat
+                ResultatHex = Obtenir-HexDepuisRGB $meilleur.Resultat.R $meilleur.Resultat.G $meilleur.Resultat.B
                 Dosage      = $meilleur.Dosage
             }
             $resume = ($trio | ForEach-Object -Begin { $k = 0 } -Process {
