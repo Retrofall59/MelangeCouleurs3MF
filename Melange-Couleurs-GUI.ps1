@@ -4931,6 +4931,28 @@ $btnRelancerEchecsLot.Add_Click({
 $form.Controls.Add($btnRelancerEchecsLot)
 $yActuel += 38
 
+# "Suggerer des trios pour un dossier..." (21/10/2026, idee en passant validee par Tomyn :
+# "2-4" - son collegue dessinateur lui envoie des dossiers de 250 fichiers, chacun avec son propre
+# personnage/sa propre palette, donc son propre trio ideal. Jusqu'ici "Suggerer un trio pour ce
+# fichier..." ne traitait qu'un .3mf a la fois - ouvrir ce bouton 250 fois pour un seul dossier
+# etait exactement la friction que ce bouton supprime. Voir Afficher-SuggestionTriosEnLot plus bas
+# (reutilise Obtenir-CouleursFichier3MF/Obtenir-MeilleureComboDepuisCouleursPourFichier, meme
+# moteur de comparaison que le bouton fichier-par-fichier existant).
+$btnSuggererTriosDossier = New-Object System.Windows.Forms.Button
+$btnSuggererTriosDossier.Text = "Suggerer des trios pour un dossier..."
+$btnSuggererTriosDossier.Location = New-Object System.Drawing.Point(15, $yActuel)
+$btnSuggererTriosDossier.Size = New-Object System.Drawing.Size(595, 30)
+Rendre-BoutonPlat $btnSuggererTriosDossier "secondaire"
+$btnSuggererTriosDossier.Add_Click({
+    $dialogueDossier = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialogueDossier.Description = "Choisis le dossier contenant les .3mf a analyser"
+    if ($dialogueDossier.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Afficher-SuggestionTriosEnLot $dialogueDossier.SelectedPath
+    }
+})
+$form.Controls.Add($btnSuggererTriosDossier)
+$yActuel += 36
+
 # File d'attente de plusieurs lots (16/10/2026, idee validee "tu peux toutes les faire") :
 # depuis la fenetre de confirmation d'un lot (Afficher-ConfirmationLot plus bas), "Ajouter a la
 # file" empile le lot (fichiers deja filtres + trio) ici au lieu de le traiter tout de suite -
@@ -6642,6 +6664,199 @@ function Afficher-ConfirmationLot([string[]]$fichiers, [string]$nomTrio, $trio) 
             Traiter-LotDeFichiers $fichiersChoisis $nomTrio $trio
         }
     }
+}
+
+# Meme regle de classement que $btnSuggererTrio.Add_Click plus haut (18/10/2026, bug du cyan
+# "zappe" - le nombre de couleurs mal rendues gagne d'abord, l'ecart moyen ne departage qu'a
+# egalite) - factorise ici en fonction independante pour etre reutilisable par
+# Afficher-SuggestionTriosEnLot sans dupliquer la boucle ni toucher au bouton existant (deja
+# charge d'un journal de diagnostic detaille que le lot n'a pas besoin de refaire pour chaque
+# fichier). Retourne @{ Nom = ...; Resultat = ... } pour le meilleur trio EXISTANT, ou $null si
+# aucun des $candidats ne donne de resultat exploitable sur ces couleurs.
+function Obtenir-MeilleurTrioExistantPourFichier([array]$couleursFichier, [array]$candidats) {
+    $meilleurNom = $null
+    $meilleurResultat = $null
+    foreach ($nom in $candidats) {
+        $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
+        if (-not $resultat) { continue }
+        $estMeilleur = (-not $meilleurResultat) -or
+            ($resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
+            (($resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
+        if ($estMeilleur) {
+            $meilleurNom = $nom
+            $meilleurResultat = $resultat
+        }
+    }
+    if (-not $meilleurResultat) { return $null }
+    return @{ Nom = $meilleurNom; Resultat = $meilleurResultat }
+}
+
+# Suggestion pour UN fichier dans le cadre d'un lot (21/10/2026, "Suggerer des trios pour un
+# dossier..." - voir Afficher-SuggestionTriosEnLot plus bas). Meme logique en deux etapes que le
+# bouton fichier-par-fichier existant : d'abord le meilleur trio deja sauvegarde, et seulement si
+# celui-ci reste faible (ecart > 12 OU au moins une couleur mal rendue - meme seuil), on regarde
+# si une combinaison inedite dans le stock de couleurs individuelles ferait mieux. Ne pose jamais
+# de question ni n'affiche de boite - purement un calcul, l'affichage/la sauvegarde sont a la
+# charge de l'appelant (nécessaire pour tourner en boucle sur 250 fichiers sans etre interrompu).
+function Obtenir-SuggestionPourFichierLot([string]$cheminFichier) {
+    $resultat = [ordered]@{
+        Fichier = $cheminFichier
+        NomAffiche = (Split-Path $cheminFichier -Leaf)
+        Erreur = $null
+        NomTrio = $null
+        EstNouvelleCombo = $false
+        Composants = $null
+        Resultat = $null
+    }
+    try {
+        $couleursFichier = Obtenir-CouleursFichier3MF $cheminFichier
+    } catch {
+        $resultat.Erreur = "$_"
+        return $resultat
+    }
+    if (-not $couleursFichier -or $couleursFichier.Count -eq 0) {
+        $resultat.Erreur = "Pas de couleurs lisibles (pas un .3mf Bambu Studio colore ?)"
+        return $resultat
+    }
+
+    $candidats = @(Obtenir-CandidatsSuggestionTrio)
+    $meilleurExistant = $null
+    if ($candidats.Count -gt 0) {
+        $meilleurExistant = Obtenir-MeilleurTrioExistantPourFichier $couleursFichier $candidats
+    }
+    $existantEstFaible = (-not $meilleurExistant) -or ($meilleurExistant.Resultat.EcartMoyen -gt 12.0) -or ($meilleurExistant.Resultat.NombreMalCouvertes -gt 0)
+
+    $meilleurCombo = $null
+    if ($existantEstFaible -and $script:MesCouleurs.Count -ge 3) {
+        $meilleurCombo = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
+    }
+    $comboEstMeilleure = $meilleurCombo -and (
+        (-not $meilleurExistant) -or
+        ($meilleurCombo.Resultat.NombreMalCouvertes -lt $meilleurExistant.Resultat.NombreMalCouvertes) -or
+        (($meilleurCombo.Resultat.NombreMalCouvertes -eq $meilleurExistant.Resultat.NombreMalCouvertes) -and ($meilleurCombo.Resultat.EcartMoyen -lt $meilleurExistant.Resultat.EcartMoyen))
+    )
+
+    if ($comboEstMeilleure) {
+        $resultat.EstNouvelleCombo = $true
+        $resultat.Composants = $meilleurCombo.Composants
+        $resultat.Resultat = $meilleurCombo.Resultat
+        $resultat.NomTrio = ($meilleurCombo.Composants | ForEach-Object { $_.Nom }) -join " + "
+    } elseif ($meilleurExistant) {
+        $resultat.NomTrio = $meilleurExistant.Nom
+        $resultat.Composants = $TRIOS[$meilleurExistant.Nom]
+        $resultat.Resultat = $meilleurExistant.Resultat
+    } else {
+        $resultat.Erreur = "Aucun trio ni combinaison de couleurs ne couvre ce fichier (ajoute des couleurs dans 'Gerer mes couleurs...' ou des trios)."
+    }
+    return $resultat
+}
+
+# Fenetre "Suggerer des trios pour un dossier..." (21/10/2026, idee en passant validee par Tomyn -
+# "2-4" : son collegue dessinateur lui envoie des dossiers de 250 fichiers, chacun avec sa propre
+# palette, donc son propre trio ideal - "Suggerer un trio pour ce fichier..." un par un etait
+# exactement la friction a supprimer). Analyse tous les .3mf d'un coup (meme filtrage que
+# Lancer-LotDepuisDossier : non recursif, "*_melange.3mf" exclus), affiche le resultat par fichier
+# dans une liste, et propose de sauvegarder en un clic toutes les combinaisons inedites trouvees
+# (dedupliquees par ensemble de teintes - plusieurs personnages du meme collegue partagent souvent
+# la meme palette, pas la peine de redemander un nom pour la meme combinaison plusieurs fois).
+function Afficher-SuggestionTriosEnLot([string]$dossier) {
+    $fichiers = @(Get-ChildItem -Path $dossier -Filter "*.3mf" -File |
+        Where-Object { $_.Name -notlike "*_melange.3mf" } |
+        ForEach-Object { $_.FullName })
+    if ($fichiers.Count -eq 0) {
+        Afficher-Boite "Aucun fichier .3mf trouve dans ce dossier (les fichiers '*_melange.3mf' deja produits sont ignores)." "Dossier vide" "OK" "Warning" | Out-Null
+        return
+    }
+
+    Afficher-OverlayProgression "Analyse de $($fichiers.Count) fichier(s)..."
+    $resultats = New-Object System.Collections.Generic.List[object]
+    try {
+        for ($i = 0; $i -lt $fichiers.Count; $i++) {
+            Mettre-A-Jour-OverlayProgression ([int](100 * ($i + 1) / $fichiers.Count)) "Analyse de $($fichiers.Count) fichier(s)..."
+            [void]$resultats.Add((Obtenir-SuggestionPourFichierLot $fichiers[$i]))
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+    } finally {
+        Masquer-OverlayProgression
+    }
+
+    $popup = New-Object System.Windows.Forms.Form
+    $popup.Text = "Trios suggeres pour $($fichiers.Count) fichier(s)"
+    $popup.StartPosition = "CenterParent"
+    $popup.FormBorderStyle = "Sizable"
+    $popup.ClientSize = New-Object System.Drawing.Size(700, 560)
+    $popup.MinimumSize = New-Object System.Drawing.Size(560, 400)
+    $popup.BackColor = $THEME.FondApp
+
+    $liste = New-Object System.Windows.Forms.ListBox
+    $liste.Location = New-Object System.Drawing.Point(15, 15)
+    $liste.Size = New-Object System.Drawing.Size(670, 460)
+    $liste.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $liste.HorizontalScrollbar = $true
+    foreach ($r in $resultats) {
+        if ($r.Erreur) {
+            [void]$liste.Items.Add("$($r.NomAffiche)  ->  ECHEC : $($r.Erreur)")
+        } elseif ($r.EstNouvelleCombo) {
+            [void]$liste.Items.Add("$($r.NomAffiche)  ->  NOUVELLE combo : $($r.NomTrio)  (ecart $([Math]::Round($r.Resultat.EcartMoyen,1)), $($r.Resultat.NombreMalCouvertes) mal rendue(s))")
+        } else {
+            [void]$liste.Items.Add("$($r.NomAffiche)  ->  $($r.NomTrio)  (ecart $([Math]::Round($r.Resultat.EcartMoyen,1)), $($r.Resultat.NombreMalCouvertes) mal rendue(s))")
+        }
+    }
+    $popup.Controls.Add($liste)
+
+    $nombreNouvelles = @($resultats | Where-Object { $_.EstNouvelleCombo }).Count
+    $nombreEchecs = @($resultats | Where-Object { $_.Erreur }).Count
+    $txtResume = New-Object System.Windows.Forms.Label
+    $txtResume.Text = "$($resultats.Count) fichier(s) analyse(s) - $nombreNouvelles nouvelle(s) combinaison(s) inedite(s), $nombreEchecs echec(s)."
+    $txtResume.Location = New-Object System.Drawing.Point(15, 480)
+    $txtResume.Size = New-Object System.Drawing.Size(670, 20)
+    $txtResume.ForeColor = $THEME.TexteSecondaire
+    $txtResume.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    $popup.Controls.Add($txtResume)
+
+    $btnSauverNouvelles = New-Object System.Windows.Forms.Button
+    $btnSauverNouvelles.Text = "Sauvegarder les nouvelles combinaisons..."
+    $btnSauverNouvelles.Location = New-Object System.Drawing.Point(15, 505)
+    $btnSauverNouvelles.Size = New-Object System.Drawing.Size(330, 32)
+    $btnSauverNouvelles.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    Rendre-BoutonPlat $btnSauverNouvelles "principal"
+    $btnSauverNouvelles.Add_Click({
+        $nouvelles = @($resultats | Where-Object { $_.EstNouvelleCombo })
+        if ($nouvelles.Count -eq 0) {
+            Afficher-Boite "Aucune nouvelle combinaison a sauvegarder." "Rien a faire" "OK" "Info" | Out-Null
+            return
+        }
+        # Deduplique par ensemble de teintes (meme principe que $ensemblesTriosExistants dans
+        # Obtenir-MeilleuresCombosDepuisCouleurs) - evite de redemander un nom pour exactement la
+        # meme combinaison plusieurs fois quand plusieurs fichiers du lot partagent une palette.
+        $vues = New-Object System.Collections.Generic.HashSet[string]
+        $uniques = New-Object System.Collections.Generic.List[object]
+        foreach ($r in $nouvelles) {
+            $cle = (($r.Composants | ForEach-Object { $_.Hex.ToUpperInvariant() } | Sort-Object) -join "|")
+            if ($vues.Add($cle)) { [void]$uniques.Add($r) }
+        }
+        $sauvegardees = 0
+        foreach ($r in $uniques) {
+            $nomSauvegarde = Demander-NomEtSauvegarderTrio $popup $r.Composants $true
+            if ($nomSauvegarde) { $sauvegardees++ }
+        }
+        $doublons = $nouvelles.Count - $uniques.Count
+        $messageDoublons = if ($doublons -gt 0) { " ($doublons doublon(s) de palette ignore(s))" } else { "" }
+        Afficher-Boite "$sauvegardees combinaison(s) sauvegardee(s) comme nouveau(x) trio(s)$messageDoublons." "Termine" "OK" "Info" | Out-Null
+    })
+    $popup.Controls.Add($btnSauverNouvelles)
+
+    $btnFermer = New-Object System.Windows.Forms.Button
+    $btnFermer.Text = "Fermer"
+    $btnFermer.Location = New-Object System.Drawing.Point(560, 505)
+    $btnFermer.Size = New-Object System.Drawing.Size(125, 32)
+    $btnFermer.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    Rendre-BoutonPlat $btnFermer "discret"
+    $btnFermer.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $popup.Controls.Add($btnFermer)
+    $popup.AcceptButton = $btnFermer
+
+    $popup.ShowDialog($form) | Out-Null
 }
 
 # Scan d'un dossier (bouton "Lot : un dossier..." ET glisser-deposer d'un dossier) - factorise ici

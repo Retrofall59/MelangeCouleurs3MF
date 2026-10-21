@@ -7,6 +7,32 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Suggestion de trios pour tout un dossier d'un coup (21/10/2026)
+
+Idée en passant proposée et validée par Tomyn ("2-4") : son collègue dessinateur lui envoie des
+dossiers de 250 fichiers .3mf, chacun avec son propre personnage/sa propre palette — "Suggérer un
+trio pour ce fichier..." un par un était exactement la friction à supprimer sur un lot de cette
+taille.
+
+- Nouveau bouton **"Suggérer des trios pour un dossier..."** (sous "Relancer les échecs...") :
+  choisit un dossier, analyse tous les .3mf qu'il contient (même filtrage que "Lot : un dossier...",
+  non récursif, `*_melange.3mf` exclus), et affiche pour chacun le trio déjà sauvegardé qui lui
+  convient le mieux — ou, si aucun ne convient bien, la meilleure combinaison inédite trouvée dans
+  le stock de couleurs individuelles ("Gérer mes couleurs..."). Même moteur de comparaison que le
+  bouton fichier-par-fichier existant (le nombre de couleurs mal rendues gagne d'abord, l'écart Lab
+  moyen ne départage qu'à égalité — même correctif que le bug du cyan "zappé" du 18/10).
+- Bouton **"Sauvegarder les nouvelles combinaisons..."** dans la fenêtre de résultat : enregistre
+  en un clic toutes les combinaisons inédites détectées, avec déduplication par ensemble de teintes
+  — plusieurs personnages du même collègue partagent souvent la même palette, pas la peine de
+  redemander un nom pour exactement la même combinaison plusieurs fois.
+- Vérifié par exécution PowerShell réelle (17 assertions, avec de vrais fichiers .3mf fabriqués
+  pour le test — zip réels contenant les couleurs Bambu Studio) : retrouve le bon trio existant,
+  détecte une vraie combinaison inédite, capture proprement un fichier corrompu sans planter le
+  reste du lot, déduplique deux palettes identiques. Toutes passent. Script entier revérifié sans
+  erreur de syntaxe (`[System.Management.Automation.Language.Parser]::ParseFile`).
+
+---
+
 ## Raccourcis clavier, vérif mise à jour, file d'attente de lots ("tu peux toutes les faire", 16/10/2026, deuxième série)
 
 Trois nouveautés portées depuis Coloriser-STL (même raisonnement, même code dans l'esprit) ;
