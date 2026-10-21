@@ -7,6 +7,31 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : plantage silencieux sur un fichier qui n'est pas un vrai .3mf (21/10/2026)
+
+Bug remonté par Tomyn en conditions réelles : en essayant d'utiliser "Suggérer un trio pour ce
+fichier..." sur un `.obj` généré par Tripo (format de sortie Tripo, pas un `.3mf` — voir
+Coloriser-STL), l'outil restait bloqué puis ne faisait plus rien, sans aucun message d'erreur.
+
+- Cause trouvée : `Obtenir-CouleursFichier3MF` et `Obtenir-NombreCouleursDetectees` appelaient
+  `ExtractToDirectory` **en dehors** de leur `try/catch` — sur un fichier qui n'est pas un ZIP
+  valide (un `.obj` texte brut, un `.3mf` tronqué/corrompu, ou n'importe quel fichier mal
+  renommé), l'exception ("Central Directory corrupt" / "End of Central Directory introuvable")
+  remontait sans filet. Le bouton "Suggérer un trio pour ce fichier..." n'avait lui-même qu'un
+  `try/finally`, **sans `catch`** — l'exception se perdait purement et simplement, d'où le
+  plantage silencieux.
+- Corrigé dans les deux fonctions : l'extraction est maintenant À L'INTÉRIEUR du `try`, traitée
+  comme n'importe quel autre échec de lecture (retourne un résultat vide/0 plutôt que de
+  planter) — le message déjà existant côté bouton ("pas un .3mf Bambu Studio avec des couleurs
+  enregistrées ?") s'affiche alors normalement au lieu de rien du tout.
+- Ajouté un vrai `catch` sur le bouton "Suggérer un trio pour ce fichier..." en plus (défense en
+  profondeur, pour toute autre erreur imprévue dans ce bloc).
+- Vérifié par analyse syntaxique PowerShell réelle (0 erreur) et par une exécution PowerShell
+  réelle REPRODUISANT le bug exact (un vrai `.obj` Wavefront texte brut, un `.3mf` tronqué à 6
+  octets, un fichier texte avec extension `.3mf`) : confirmé que l'ancien code plantait bien avec
+  le même message que celui remonté par Tomyn, et que le code corrigé ne plante plus sur aucun
+  des trois cas (6 assertions, plus 2 assertions de non-régression sur un vrai `.3mf` valide).
+
 ## Bouton "Tout appliquer" après la suggestion par dossier (21/10/2026, deuxième idée en passant)
 
 Ferme la boucle ouverte par la fonctionnalité précédente : "Suggérer des trios pour un dossier..."

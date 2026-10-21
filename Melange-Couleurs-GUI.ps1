@@ -2797,8 +2797,14 @@ function Decoder-EtatPaintColor([string]$texte) {
 # melanges" des qu'un fichier est choisi (10/10/2026, demande par Tomyn).
 function Obtenir-NombreCouleursDetectees([string]$chemin3mf) {
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("couleurs3mf_" + [guid]::NewGuid().ToString("N"))
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($chemin3mf, $dossierTemp)
     try {
+        # 21/10/2026, bug remonte par Tomyn (fichier .obj genere par Tripo, pas un vrai .3mf Bambu
+        # Studio - voir Obtenir-CouleursFichier3MF ci-dessous pour le detail complet) : cet appel
+        # etait AVANT le try, donc "Impossible de trouver l'enregistrement End of Central Directory"
+        # (fichier pas un ZIP valide) remontait telle quelle, non rattrapee par cette fonction NI par
+        # ses appelants - plantage silencieux. Deplace a l'interieur du try, meme traitement que les
+        # autres echecs de lecture : 0 couleur detectee plutot qu'une exception qui se propage.
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($chemin3mf, $dossierTemp)
         $cheminConfig = Join-Path $dossierTemp "Metadata\project_settings.config"
         if (-not (Test-Path $cheminConfig)) { return 0 }
         $config = Get-Content $cheminConfig -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -2815,8 +2821,19 @@ function Obtenir-NombreCouleursDetectees([string]$chemin3mf) {
 # verification de couverture PAR FICHIER ci-dessous.
 function Obtenir-CouleursFichier3MF([string]$chemin3mf) {
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("couleurs3mf_" + [guid]::NewGuid().ToString("N"))
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($chemin3mf, $dossierTemp)
     try {
+        # 21/10/2026, bug remonte par Tomyn : fichier .obj genere par Tripo (format de sortie Tripo
+        # depuis le 07/10/2026, pas un .3mf - voir TripoApiClient.kt/Coloriser-STL-GUI.ps1) ouvert
+        # par erreur dans le Melangeur, qui n'accepte que de vrais .3mf Bambu Studio. "Suggerer un
+        # trio pour ce fichier..." ($btnSuggererTrio.Add_Click) a un try/finally SANS catch : cet
+        # appel a ExtractToDirectory etait avant le try de CETTE fonction, donc "Impossible de
+        # trouver l'enregistrement End of Central Directory" (fichier pas un ZIP valide) remontait
+        # telle quelle jusqu'au clic du bouton, ou rien ne l'attrapait - exception perdue dans le
+        # vide, aucun message, l'appli semble juste se bloquer puis "ne rien faire". Meme correctif
+        # que Obtenir-NombreCouleursDetectees ci-dessus : deplace a l'interieur du try, traite comme
+        # n'importe quel autre echec de lecture - @() vide, message clair "pas un .3mf Bambu Studio"
+        # deja affiche par l'appelant ($btnSuggererTrio) dans ce cas.
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($chemin3mf, $dossierTemp)
         $cheminConfig = Join-Path $dossierTemp "Metadata\project_settings.config"
         if (-not (Test-Path $cheminConfig)) { return @() }
         $config = Get-Content $cheminConfig -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -4740,6 +4757,14 @@ $btnSuggererTrio.Add_Click({
             }
         }
         Afficher-Boite $messageResultat "Trio suggere" "OK" "Info" | Out-Null
+    } catch {
+        # 21/10/2026, bug remonte par Tomyn : ce bloc n'avait qu'un try/finally, pas de catch -
+        # une exception imprevue (ex. fichier pas un vrai .3mf, voir le correctif dans
+        # Obtenir-CouleursFichier3MF) partait dans le vide, sans message, l'appli semblant juste
+        # se bloquer puis ne plus rien faire. Le correctif dans Obtenir-CouleursFichier3MF regle
+        # DEJA ce cas precis (elle ne devrait plus jamais lancer), mais ce catch reste en
+        # defense en profondeur pour toute autre erreur imprevue dans ce bloc.
+        Afficher-Boite "Erreur inattendue pendant la suggestion de trio : $_" "Erreur" "OK" "Error" | Out-Null
     } finally {
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
         $btnSuggererTrio.Enabled = $true
