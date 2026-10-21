@@ -6846,6 +6846,37 @@ function Afficher-SuggestionTriosEnLot([string]$dossier) {
     })
     $popup.Controls.Add($btnSauverNouvelles)
 
+    # "Tout appliquer" (21/10/2026, idee en passant - ferme la boucle de "Suggerer des trios pour un
+    # dossier..." : jusqu'ici, apres la suggestion, il fallait relancer "Lancer le lot" a la main,
+    # fichier par fichier ou en regroupant soi-meme ceux qui partagent la meme suggestion. Lance
+    # directement Traiter-LotAvecSuggestions avec CHAQUE fichier et SON PROPRE trio (voir la note en
+    # tete de cette fonction pour la difference avec Lancer-LotDepuisDossier, qui applique un seul
+    # trio choisi a tout le lot).
+    $btnToutAppliquer = New-Object System.Windows.Forms.Button
+    $btnToutAppliquer.Text = "Tout appliquer..."
+    $btnToutAppliquer.Location = New-Object System.Drawing.Point(355, 505)
+    $btnToutAppliquer.Size = New-Object System.Drawing.Size(195, 32)
+    $btnToutAppliquer.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    Rendre-BoutonPlat $btnToutAppliquer "principal"
+    $btnToutAppliquer.Add_Click({
+        $valides = @($resultats | Where-Object { -not $_.Erreur })
+        if ($valides.Count -eq 0) {
+            Afficher-Boite "Aucun fichier exploitable (tous en echec d'analyse)." "Rien a appliquer" "OK" "Warning" | Out-Null
+            return
+        }
+        $nombreNouvellesIci = @($valides | Where-Object { $_.EstNouvelleCombo }).Count
+        $messageAvert = "Appliquer le trio suggere a $($valides.Count) fichier(s) (chacun avec SA PROPRE suggestion, pas un seul trio pour tout le lot)."
+        if ($nombreNouvellesIci -gt 0) {
+            $messageAvert += "`r`n`r`n$nombreNouvellesIci fichier(s) utilisent une combinaison INEDITE (pas encore sauvegardee comme trio) - elle sera utilisee quand meme, mais pas enregistree pour plus tard. Utilise 'Sauvegarder les nouvelles combinaisons...' avant si tu veux les retrouver dans 'Gerer mes trios...' par la suite."
+        }
+        $messageAvert += "`r`n`r`nContinuer ?"
+        $reponseAppliquer = Afficher-Boite $messageAvert "Tout appliquer" "YesNo" "Warning"
+        if ($reponseAppliquer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        $popup.Close()
+        Traiter-LotAvecSuggestions $valides
+    })
+    $popup.Controls.Add($btnToutAppliquer)
+
     $btnFermer = New-Object System.Windows.Forms.Button
     $btnFermer.Text = "Fermer"
     $btnFermer.Location = New-Object System.Drawing.Point(560, 505)
@@ -7202,6 +7233,182 @@ function Traiter-LotDeFichiers([string[]]$fichiers, [string]$nomTrio, $trio) {
         $btnLotDossier.Enabled = $true
         $btnLotFichiers.Enabled = $true
         $btnRelancerEchecsLot.Enabled = $true
+        $labelProgresLot.Visible = $false
+        $barreProgresLot.Visible = $false
+        Masquer-OverlayProgression
+    }
+}
+
+# "Tout appliquer" depuis la fenetre de suggestion par dossier (21/10/2026, idee en passant - voir
+# Afficher-SuggestionTriosEnLot). Volontairement une fonction A PART plutot qu'une generalisation de
+# Traiter-LotDeFichiers : celle-ci applique UN SEUL trio a tout le lot et alimente
+# $script:dernierLotTrioMelange / $script:dernierLotTrioNomMelange pour "Relancer les echecs..."
+# (un seul trio attendu la-bas) - avec un trio DIFFERENT par fichier ici, cette mecanique de reprise
+# n'a plus de sens telle quelle. Simplification assumee pour cette premiere version : pas de
+# "Relancer les echecs" sur ce chemin-la (pas demande par Tomyn, facile a ajouter plus tard en
+# memorisant les couples fichier/trio plutot qu'un trio unique, si le besoin se confirme).
+# $resultatsValides : items de Obtenir-SuggestionPourFichierLot, DEJA filtres (pas d'Erreur) par
+# l'appelant - chaque item porte son propre $r.Composants (le trio, existant ou nouvelle
+# combinaison - fonctionne dans les deux cas, Traiter-Fichier3MF n'a besoin que de 3 @{Nom;Hex}).
+function Traiter-LotAvecSuggestions([array]$resultatsValides) {
+    if (-not $resultatsValides -or $resultatsValides.Count -eq 0) {
+        Afficher-Boite "Aucun fichier a traiter (tous en echec d'analyse ?)." "Lot vide" "OK" "Warning" | Out-Null
+        return
+    }
+
+    # Meme verification d'espace disque que Traiter-LotDeFichiers (16/10/2026) - $r.Fichier au lieu
+    # d'un tableau de chemins bruts, meme calcul sinon.
+    try {
+        $tailleEstimeeOctets = 0
+        foreach ($r in $resultatsValides) { if (Test-Path $r.Fichier) { $tailleEstimeeOctets += (Get-Item $r.Fichier).Length } }
+        $dossierPremierFichier = Split-Path (Resolve-Path $resultatsValides[0].Fichier) -Parent
+        if ($dossierPremierFichier -and (Test-Path $dossierPremierFichier)) {
+            $racineDisque = (Get-Item $dossierPremierFichier).PSDrive.Root
+            $lecteur = New-Object System.IO.DriveInfo($racineDisque)
+            if ($lecteur.IsReady) {
+                $espaceEstimeMo = [Math]::Round(($tailleEstimeeOctets * 1.2) / 1MB)
+                $espaceLibreMo = [Math]::Round($lecteur.AvailableFreeSpace / 1MB)
+                if ($espaceLibreMo -lt $espaceEstimeMo) {
+                    $reponseEspace = Afficher-Boite "Espace disque libre sur $($lecteur.Name) : ~$espaceLibreMo Mo. Estimation pour ce lot : ~$espaceEstimeMo Mo.`r`n`r`nContinuer quand meme ?" "Espace disque potentiellement insuffisant" "YesNo" "Warning"
+                    if ($reponseEspace -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+                }
+            }
+        }
+    } catch { }
+
+    $txtJournal.Clear()
+    $btnLancer.Enabled = $false
+    $btnParcourir.Enabled = $false
+    $menuTrio.Enabled = $false
+    $btnLotDossier.Enabled = $false
+    $btnLotFichiers.Enabled = $false
+    $labelProgresLot.Visible = $true
+    $barreProgresLot.Visible = $true
+    $barreProgresLot.Minimum = 0
+    $barreProgresLot.Maximum = $resultatsValides.Count
+    $barreProgresLot.Value = 0
+    Afficher-OverlayProgression "Lot en cours (trio different par fichier)..." $true
+    $chronoLot = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $reussis = New-Object System.Collections.Generic.List[string]
+        $echecs = New-Object System.Collections.Generic.List[string]
+        $dernierCheminSortie = $null
+        $interrompu = $false
+
+        Ecrire-Journal "Lot de $($resultatsValides.Count) fichier(s), chacun avec son propre trio suggere."
+        Ecrire-Journal ""
+
+        $i = 0
+        foreach ($r in $resultatsValides) {
+            if ($script:pauseDemandeeMelange) {
+                Ecrire-Journal "  (En pause - clique sur Reprendre dans la fenetre de progression pour continuer)"
+                while ($script:pauseDemandeeMelange -and -not $script:annulationDemandeeMelange) {
+                    Start-Sleep -Milliseconds 200
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                if ($script:annulationDemandeeMelange) {
+                    Ecrire-Journal "`r`n=== Annule par l'utilisateur ==="
+                    $interrompu = $true
+                    break
+                }
+                Ecrire-Journal "  (Reprise du lot)"
+            }
+            $i++
+            $fichier = $r.Fichier
+            $trio = $r.Composants
+            $nomTrio = $r.NomTrio
+            $nomCourt = $r.NomAffiche
+            $etaTexte = Obtenir-TexteEtaLot $chronoLot ($i - 1) $resultatsValides.Count
+            $labelProgresLot.Text = "Fichier $i / $($resultatsValides.Count) : $nomCourt (trio $nomTrio)$etaTexte"
+            Mettre-A-Jour-OverlayProgression ([int](($i - 1) / $resultatsValides.Count * 100)) "Fichier $i / $($resultatsValides.Count) : $nomCourt (trio $nomTrio)$etaTexte"
+            Ecrire-Journal "--- [$i/$($resultatsValides.Count)] $nomCourt (trio $nomTrio) ---"
+            try {
+                if (-not (Test-Path $fichier)) { throw "fichier introuvable" }
+                $cheminSortie = Obtenir-CheminSortieLot $fichier
+                $nombreMelanges = 29
+                try {
+                    $detecte = Obtenir-NombreCouleursDetectees $fichier
+                    if ($detecte -gt 0) { $nombreMelanges = [Math]::Min($detecte, 29) }
+                } catch { }
+                Traiter-Fichier3MF $fichier $cheminSortie $trio ([int]$selecteurPrecision.Value) ${function:Ecrire-Journal} $nombreMelanges {
+                    param($pct)
+                    Mettre-A-Jour-OverlayProgression ([int]((($i - 1) + ($pct / 100.0)) / $resultatsValides.Count * 100))
+                }.GetNewClosure()
+                $reussis.Add($cheminSortie)
+                $dernierCheminSortie = $cheminSortie
+                Ajouter-LigneHistorique $nomTrio $fichier "OK -> $cheminSortie"
+                Ecrire-Journal "OK : $cheminSortie (3 primaires + $nombreMelanges melange(s) detecte(s))"
+            } catch {
+                if ("$_" -eq $script:ANNULATION_MARQUEUR_MELANGE) {
+                    Ecrire-Journal "`r`n=== Annule par l'utilisateur (en cours de traitement de $nomCourt) ==="
+                    $interrompu = $true
+                    break
+                }
+                $echecs.Add("$nomCourt : $_")
+                Ajouter-LigneHistorique $nomTrio $fichier "ECHEC : $_"
+                Ecrire-Journal "ECHEC : $_"
+            }
+            $barreProgresLot.Value = $i
+            Ecrire-Journal ""
+        }
+
+        $chronoLot.Stop()
+        $dureeLot = $chronoLot.Elapsed
+        $dureeTexte = if ($dureeLot.TotalHours -ge 1) {
+            "{0:00}h{1:00}m{2:00}s" -f [int]$dureeLot.TotalHours, $dureeLot.Minutes, $dureeLot.Seconds
+        } else {
+            "{0:00}m{1:00}s" -f $dureeLot.Minutes, $dureeLot.Seconds
+        }
+
+        Ecrire-Journal "=== Lot termine en $dureeTexte : $($reussis.Count) reussi(s), $($echecs.Count) echec(s)$(if ($interrompu) { ', traitement interrompu' }) ==="
+        if ($echecs.Count -gt 0) {
+            Ecrire-Journal "Fichiers en echec :"
+            foreach ($e in $echecs) { Ecrire-Journal "  - $e" }
+        }
+
+        if (-not $interrompu) {
+            Mettre-A-Jour-OverlayProgression 100
+            Masquer-OverlayProgressionApresDelai 5
+        } else {
+            Masquer-OverlayProgression
+        }
+
+        if ($dernierCheminSortie) { Mettre-A-Jour-Apercu $pictureApres "apres" $dernierCheminSortie }
+
+        try {
+            $dossierJournal = [System.IO.Path]::GetDirectoryName((Resolve-Path $resultatsValides[0].Fichier))
+            $nomJournal = "lot_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss")
+            $cheminJournal = [System.IO.Path]::Combine($dossierJournal, $nomJournal)
+            $txtJournal.Text | Set-Content -Path $cheminJournal -Encoding UTF8 -ErrorAction Stop
+            Ecrire-Journal "Journal du lot enregistre : $cheminJournal"
+        } catch {
+            Ecrire-Journal "(Impossible d'enregistrer le journal du lot sur le disque : $_)"
+        }
+
+        try {
+            if ($echecs.Count -gt 0) { [System.Media.SystemSounds]::Exclamation.Play() } else { [System.Media.SystemSounds]::Asterisk.Play() }
+        } catch { }
+
+        try {
+            $script:notifIcon.ShowBalloonTip(6000, "Melange termine", "$($reussis.Count) reussi(s), $($echecs.Count) echec(s)$(if ($interrompu) { ' (annule)' })", [System.Windows.Forms.ToolTipIcon]::Info)
+        } catch { }
+
+        # Pas de "Relancer les echecs..." ici - voir la note en tete de fonction.
+        $btnRelancerEchecsLot.Visible = $false
+
+        $titreResume = if ($interrompu) { "Lot annule" } else { "Lot termine" }
+        $messageResume = "$titreResume en $dureeTexte.`r`n`r`nReussis : $($reussis.Count)`r`nEchecs : $($echecs.Count)"
+        if ($echecs.Count -gt 0) { $messageResume += "`r`n`r`nVoir le journal pour le detail des echecs." }
+        $messageResume += "`r`n`r`nRappel : le dosage est une approximation maison - a verifier avant un gros lot (voir le README)."
+        Afficher-Boite $messageResume $titreResume "OK" "Info" | Out-Null
+
+        if ($reussis.Count -gt 0) { Afficher-FenetreResultatsLot @($reussis) }
+    } finally {
+        $btnLancer.Enabled = $true
+        $btnParcourir.Enabled = $true
+        $menuTrio.Enabled = $true
+        $btnLotDossier.Enabled = $true
+        $btnLotFichiers.Enabled = $true
         $labelProgresLot.Visible = $false
         $barreProgresLot.Visible = $false
         Masquer-OverlayProgression

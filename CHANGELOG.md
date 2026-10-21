@@ -7,6 +7,28 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Bouton "Tout appliquer" après la suggestion par dossier (21/10/2026, deuxième idée en passant)
+
+Ferme la boucle ouverte par la fonctionnalité précédente : "Suggérer des trios pour un dossier..."
+analysait et proposait, mais il fallait ensuite relancer "Lancer le lot" à la main, fichier par
+fichier ou en regroupant soi-même ceux qui partagent la même suggestion.
+
+- Nouveau bouton "Tout appliquer..." dans la fenêtre de résultats de la suggestion par dossier.
+  Traite chaque fichier valide (hors échecs d'analyse) avec SA PROPRE combinaison suggérée — pas un
+  seul trio choisi pour tout le lot comme le fait "Lot : un dossier..." (`Lancer-LotDepuisDossier`).
+  Fonctionne aussi bien avec un trio déjà sauvegardé qu'avec une combinaison inédite non encore
+  nommée (prévient si des combinaisons inédites seront utilisées sans être enregistrées).
+- Nouvelle fonction `Traiter-LotAvecSuggestions`, volontairement séparée de `Traiter-LotDeFichiers`
+  plutôt qu'une généralisation de celle-ci : cette dernière alimente `$script:dernierLotTrioMelange`
+  pour "Relancer les échecs..." (un seul trio attendu) — avec un trio différent par fichier, cette
+  mécanique de reprise n'a plus de sens telle quelle. Simplification assumée pour cette première
+  version : pas de "Relancer les échecs..." sur ce chemin (pas demandé par Tomyn, facile à ajouter
+  plus tard en mémorisant les couples fichier/trio si le besoin se confirme).
+- Vérifié par analyse syntaxique PowerShell réelle du script entier (0 erreur) et par une exécution
+  PowerShell réelle du filtrage et de l'assignation par-fichier (7 assertions, dont la vérification
+  explicite qu'aucun fichier ne reçoit la combinaison d'un autre — bug classique de ce genre de
+  refactor).
+
 ## Suggestion de trios pour tout un dossier d'un coup (21/10/2026)
 
 Idée en passant proposée et validée par Tomyn ("2-4") : son collègue dessinateur lui envoie des
