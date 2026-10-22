@@ -6517,6 +6517,34 @@ Ajouter-MenuContextuelApercu $pictureAvant "avant"
 Ajouter-RaccourcisClavierApercu $pictureAvant "avant"
 Ajouter-ZoomApercu $pictureAvant "avant"
 
+# 22/10/2026, Tomyn : "il faudrait une barre de progression de generation previews pour que
+# l'utilisateur lambda ne pense pas que l'application est bloque" - un calcul d'apercu prend
+# couramment 20-60s sur un gros maillage (voir les chronometrages dans le journal), et rien
+# jusqu'ici ne le montrait a l'ecran (seul le journal en bas, facile a ne pas remarquer). Pas de
+# vraie progression chiffree possible ici (le calcul en arriere-plan, dans Nouvelle-ImageApercu, ne
+# remonte aucun avancement intermediaire au thread principal pendant qu'il tourne) - une fine
+# bande "indeterminee" (va-et-vient, meme principe visuel que la barre de l'ecran de lancement plus
+# haut : piste violette sombre + remplissage orange) superposee au bas de la case d'apercu suffit a
+# montrer "ca travaille", sans faire croire a une estimation precise qu'on n'a pas. Affichee/animee/
+# masquee par Mettre-A-Jour-Apercu et Redessiner-Apercu-AvecRotation, qui retrouvent ces controles
+# via $script:ApercuEtat["__ProgressPiste_<cle>__"]/["__ProgressRemplissage_<cle>__"], meme
+# principe que $labelAngle juste au-dessus.
+$pisteApercuAvant = New-Object System.Windows.Forms.Panel
+$pisteApercuAvant.Location = New-Object System.Drawing.Point($xApercu, ($yPictureAvant + $hauteurApercu - 5))
+$pisteApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 5)
+$pisteApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+$pisteApercuAvant.Anchor = "Top, Right"
+$pisteApercuAvant.Visible = $false
+$form.Controls.Add($pisteApercuAvant)
+$pisteApercuAvant.BringToFront()
+$remplissageApercuAvant = New-Object System.Windows.Forms.Panel
+$remplissageApercuAvant.Location = New-Object System.Drawing.Point(0, 0)
+$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 5)
+$remplissageApercuAvant.BackColor = $THEME.AccentChaud
+$pisteApercuAvant.Controls.Add($remplissageApercuAvant)
+$script:ApercuEtat["__ProgressPiste_avant__"] = $pisteApercuAvant
+$script:ApercuEtat["__ProgressRemplissage_avant__"] = $remplissageApercuAvant
+
 # Affiche l'angle actuellement applique (10/10/2026, Tomyn : "go les amelio") - evite d'avoir a
 # remonter dans le journal pour savoir ou on en est. Mis a jour par Mettre-A-Jour-Apercu et
 # Redessiner-Apercu-AvecRotation, qui retrouvent ce controle via $script:ApercuEtat["__Label_<cle>__"]
@@ -6566,6 +6594,23 @@ $form.Controls.Add($pictureApres)
 Ajouter-MenuContextuelApercu $pictureApres "apres"
 Ajouter-RaccourcisClavierApercu $pictureApres "apres"
 Ajouter-ZoomApercu $pictureApres "apres"
+
+# Meme bande de progression que $pisteApercuAvant plus haut (voir son commentaire pour le detail).
+$pisteApercuApres = New-Object System.Windows.Forms.Panel
+$pisteApercuApres.Location = New-Object System.Drawing.Point($xApercu, ($yPictureApres + $hauteurApercu - 5))
+$pisteApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 5)
+$pisteApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+$pisteApercuApres.Anchor = "Top, Right"
+$pisteApercuApres.Visible = $false
+$form.Controls.Add($pisteApercuApres)
+$pisteApercuApres.BringToFront()
+$remplissageApercuApres = New-Object System.Windows.Forms.Panel
+$remplissageApercuApres.Location = New-Object System.Drawing.Point(0, 0)
+$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 5)
+$remplissageApercuApres.BackColor = $THEME.AccentChaud
+$pisteApercuApres.Controls.Add($remplissageApercuApres)
+$script:ApercuEtat["__ProgressPiste_apres__"] = $pisteApercuApres
+$script:ApercuEtat["__ProgressRemplissage_apres__"] = $remplissageApercuApres
 
 $labelAngleApres = New-Object System.Windows.Forms.Label
 $labelAngleApres.Text = "Rotation : --  /  Inclinaison : --"
@@ -6705,11 +6750,38 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $boutonStop = $etatPartage["__BoutonStop_$cle__"]
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
+    # 22/10/2026, Tomyn : "barre de progression de generation previews" - voir le commentaire detaille
+    # pres de la creation de $pisteApercuAvant/$pisteApercuApres plus haut. Affichee des le lancement
+    # du calcul en arriere-plan, animee en va-et-vient a chaque tick du minuteur existant (pas besoin
+    # d'un second Timer), masquee dans le "finally" ci-dessous, succes ou echec.
+    # Direction du va-et-vient en variable LOCALE simple (capturee par la closure, comme
+    # $pisteApercu/$remplissageApercu juste en-dessous) plutot que dans $etatPartage - pas besoin du
+    # hashtable partage pour un etat qui ne sert qu'a CE minuteur.
+    $directionBarre = 1
+    $pisteApercu = $etatPartage["__ProgressPiste_$cle__"]
+    $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
+    if ($pisteApercu) {
+        $remplissageApercu.Left = 0
+        $pisteApercu.Visible = $true
+    }
+
     $resultatAsync = $ps.BeginInvoke()
 
     $minuteur = New-Object System.Windows.Forms.Timer
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
+        if ($pisteApercu) {
+            $pas = 10 * $directionBarre
+            $nouveauLeft = $remplissageApercu.Left + $pas
+            if ($nouveauLeft -le 0) {
+                $nouveauLeft = 0
+                $directionBarre = 1
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
+                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+                $directionBarre = -1
+            }
+            $remplissageApercu.Left = $nouveauLeft
+        }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()
         $minuteur.Dispose()
@@ -6760,6 +6832,7 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
         } finally {
             if (-not $estPerime) { $pictureBox.Cursor = [System.Windows.Forms.Cursors]::Default }
             if ($boutonStop) { $boutonStop.Enabled = $false }
+            if ($pisteApercu) { $pisteApercu.Visible = $false }
             $ps.Dispose()
             $runspace.Close()
         }
@@ -6838,11 +6911,39 @@ $corpsFonctions
     $script:ApercuEtat["__PSActif_$cle__"] = $ps
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
+    # Meme bande de progression indeterminee que Mettre-A-Jour-Apercu (voir son commentaire pour le
+    # detail) - la rotation interactive est plus courte (resolution reduite juste au-dessus) mais
+    # reste perceptible, vaut la peine d'etre montree ici aussi.
+    # Direction du va-et-vient en variable LOCALE simple (pas dans $script:ApercuEtat) : capturee par
+    # la closure comme $pisteApercu/$remplissageApercu juste en-dessous, inutile de passer par le
+    # hashtable partage pour un etat qui ne sert qu'a CE minuteur (et qui, de toute facon, ne doit
+    # jamais etre lu/ecrit via $script: a l'interieur d'une closure GetNewClosure(), voir la note plus
+    # haut pres de la creation de $script:ApercuEtat).
+    $directionBarre = 1
+    $pisteApercu = $script:ApercuEtat["__ProgressPiste_$cle__"]
+    $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
+    if ($pisteApercu) {
+        $remplissageApercu.Left = 0
+        $pisteApercu.Visible = $true
+    }
+
     $resultatAsync = $ps.BeginInvoke()
 
     $minuteur = New-Object System.Windows.Forms.Timer
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
+        if ($pisteApercu) {
+            $pas = 10 * $directionBarre
+            $nouveauLeft = $remplissageApercu.Left + $pas
+            if ($nouveauLeft -le 0) {
+                $nouveauLeft = 0
+                $directionBarre = 1
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
+                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+                $directionBarre = -1
+            }
+            $remplissageApercu.Left = $nouveauLeft
+        }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()
         $minuteur.Dispose()
@@ -6875,6 +6976,7 @@ $corpsFonctions
         } finally {
             if (-not $estPerime) { $pictureBox.Cursor = [System.Windows.Forms.Cursors]::Default }
             if ($boutonStop) { $boutonStop.Enabled = $false }
+            if ($pisteApercu) { $pisteApercu.Visible = $false }
             $ps.Dispose()
             $runspace.Close()
         }

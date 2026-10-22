@@ -7,6 +7,25 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Ajout : barre de progression sur les aperçus, 22/10/2026, soir
+
+Tomyn : "il faudrait une barre de progression de génération previews pour que l'utilisateur lambda
+ne pense pas que l'application est bloqué". Un calcul d'aperçu prend couramment 20-60s sur un gros
+maillage, et rien ne le montrait à l'écran avant (seul le journal en bas, facile à ne pas
+remarquer).
+
+Pas de vraie progression chiffrée possible : le calcul en arrière-plan (`Nouvelle-ImageApercu`,
+dans un Runspace séparé) ne remonte aucun avancement intermédiaire pendant qu'il tourne. Une fine
+bande **indéterminée** (va-et-vient, même principe visuel que la barre de l'écran de lancement :
+piste violette sombre + remplissage orange) superposée au bas de chaque case d'aperçu suffit à
+montrer "ça travaille", sans faire croire à une estimation précise qu'on n'a pas.
+
+Affichée au lancement du calcul, animée à chaque tick du minuteur déjà existant (pas de second
+Timer), masquée à la fin (succès ou échec) - sur le chargement initial (`Mettre-A-Jour-Apercu`) ET
+la rotation manuelle/Auto (`Redessiner-Apercu-AvecRotation`).
+
+---
+
 ## Annulé : retour à la vraie géométrie - régression confirmée ("pire qu'avant"), 22/10/2026, soir
 
 Le passage au dessin systématique de la vraie géométrie du triangle (voir entrée annulée
