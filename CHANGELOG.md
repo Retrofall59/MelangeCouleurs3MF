@@ -7,6 +7,18 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Ajustement : nuage de points - taille des carrés augmentée (22/10/2026, soir)
+
+Confirmé par Tomyn ("c'est mieux mais c'est pas encore ça") : le diagnostic de la 4e tentative
+était le bon (la silhouette est désormais nettement visible, contrairement aux 3 tentatives
+précédentes), mais le chevauchement entre carrés voisins (0,6 px, pour des carrés de 1,6 px)
+restait insuffisant pour fusionner complètement les points en zones pleines. Seul changement :
+`$DEMI_TAILLE_CARRE` passe de 0,8 à 1,3 (carrés de 2,6 px, soit 1,6 px de chevauchement avec les
+cellules voisines, espacées de 1 px) - aucune autre logique touchée. Toujours à confirmer
+visuellement par Tomyn.
+
+---
+
 ## Correctif : bug "nuage de points" - 4e tentative, rasterisation garantie (22/10/2026, soir)
 
 La 3e tentative (sélection par grille d'écran, voir entrée ci-dessous) - vérifiée mathématiquement
