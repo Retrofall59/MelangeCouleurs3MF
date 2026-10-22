@@ -6598,10 +6598,16 @@ function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$r
     $controle.Region = New-Object System.Drawing.Region($chemin)
 }
 
-function Creer-CarteProgressionApercu([int]$largeur) {
-    # Carte un peu plus haute et mieux respiree qu'avant (34 -> 40px, marges 4 -> 8px) pour se
-    # rapprocher du "flottant, aere" de $overlayProgression plutot que d'une bande utilitaire.
-    $hauteurCarte = 40
+function Creer-CarteProgressionApercu([int]$largeurDisponible) {
+    # 23/10/2026, Tomyn, 3e capture d'ecran de suite : "toujours ultra moche" meme avec coins
+    # arrondis et marge - le vrai ecart restant, visible sur cette capture, c'est que la carte fait
+    # TOUTE la largeur de la vignette, collee en bande plate dessous. $overlayProgression n'est PAS
+    # pleine largeur : c'est une carte plus etroite que son conteneur, qui FLOTTE au milieu -
+    # vraiment un "popup", pas une barre d'etat. Reprise ici en MOINS large que la vignette (72%,
+    # centree) et CENTREE SUR la vignette elle-meme (zone blanche, vide pendant le chargement) au
+    # lieu d'etre accrochee dessous - plus proche du vrai comportement d'un popup flottant.
+    $largeurCarte = [Math]::Max(170, [int]($largeurDisponible * 0.72))
+    $hauteurCarte = 56
     $overlay = New-Object System.Windows.Forms.Form
     $overlay.FormBorderStyle = "None"
     $overlay.ShowInTaskbar = $false
@@ -6610,27 +6616,27 @@ function Creer-CarteProgressionApercu([int]$largeur) {
     # Meme correctif que le 23/10/2026 precedent : sans MinimumSize=(0,0), Windows impose une
     # hauteur minimale de fenetre (~39px) meme avec FormBorderStyle=None.
     $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
-    $overlay.Size = New-Object System.Drawing.Size($largeur, $hauteurCarte)
+    $overlay.Size = New-Object System.Drawing.Size($largeurCarte, $hauteurCarte)
     $overlay.BackColor = $THEME.FondBanniere
-    Definir-RegionArrondie $overlay 8
+    Definir-RegionArrondie $overlay 10
 
     $labelTitre = New-Object System.Windows.Forms.Label
-    $labelTitre.Text = "Chargement de l'apercu..."
-    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+    $labelTitre.Text = "Chargement..."
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
     $labelTitre.ForeColor = [System.Drawing.Color]::White
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
     $labelTitre.TextAlign = "MiddleCenter"
-    $labelTitre.Location = New-Object System.Drawing.Point(8, 4)
-    $labelTitre.Size = New-Object System.Drawing.Size(($largeur - 16), 16)
+    $labelTitre.Location = New-Object System.Drawing.Point(10, 8)
+    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 20), 20)
     $overlay.Controls.Add($labelTitre)
 
     $piste = New-Object System.Windows.Forms.Panel
-    $piste.Location = New-Object System.Drawing.Point(8, 24)
-    $piste.Size = New-Object System.Drawing.Size(($largeur - 16), 8)
+    $piste.Location = New-Object System.Drawing.Point(14, 36)
+    $piste.Size = New-Object System.Drawing.Size(($largeurCarte - 28), 8)
     $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
     $overlay.Controls.Add($piste)
 
-    $largeurRemplissage = [Math]::Max(30, [int](($largeur - 16) * 0.25))
+    $largeurRemplissage = [Math]::Max(26, [int](($largeurCarte - 28) * 0.28))
     $remplissage = New-Object System.Windows.Forms.Panel
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
     $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 8)
@@ -6915,7 +6921,11 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             # tous les cas, l'auto-chargement comme un chargement manuel) corrige les deux situations
             # sans distinction de cas particulier, et gere en prime un deplacement de la fenetre
             # principale pendant un calcul (bonus, pas la cause initiale).
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, ($pictureBox.Height + 4))))
+            # 23/10/2026, Tomyn, 3e capture d'ecran : plus accrochee SOUS la PictureBox (bande pleine
+            # largeur) - centree SUR elle (zone blanche, vide pendant le chargement), comme un vrai
+            # popup flottant plutot qu'une barre d'etat collee. Voir le commentaire dans
+            # Creer-CarteProgressionApercu.
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(([int](($pictureBox.Width - $overlayApercu.Width) / 2)), ([int](($pictureBox.Height - $overlayApercu.Height) / 2)))))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             # 23/10/2026, Tomyn (apres le fix du blocage) : "c'est bon mais elle est toujours ultra
@@ -7088,7 +7098,7 @@ $corpsFonctions
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, ($pictureBox.Height + 4))))
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(([int](($pictureBox.Width - $overlayApercu.Width) / 2)), ([int](($pictureBox.Height - $overlayApercu.Height) / 2)))))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             $nouveauLeft = $remplissageApercu.Left + 8

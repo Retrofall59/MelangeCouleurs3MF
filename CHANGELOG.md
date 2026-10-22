@@ -7,6 +7,26 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : carte flottante centrée sur la vignette, pas pleine largeur collée dessous ("toujours ultra moche", 3e capture), 23/10/2026
+
+Tomyn, 3e capture d'écran de suite : "toujours ultra moche" - malgré les coins arrondis et la
+marge du fix précédent. Cette capture montre le dernier vrai écart avec `$overlayProgression` :
+la carte fait **toute la largeur** de la vignette, posée en bande pleine largeur juste en-dessous.
+`$overlayProgression`, elle, est nettement plus étroite que son conteneur et **flotte au milieu** -
+un vrai popup, pas une barre d'état accrochée.
+
+Changements :
+- La carte ne fait plus toute la largeur : 72% de la largeur de la vignette, comme
+  `$overlayProgression` qui est nettement plus étroite que la fenêtre principale.
+- Centrée **sur** la vignette (zone blanche, de toute façon vide pendant le chargement) au lieu
+  d'être accrochée dessous.
+- Carte agrandie et plus aérée (40 → 56px de haut, titre à 10pt), plus proche des proportions
+  (même réduites) d'un vrai popup plutôt que d'une barre d'état fine.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : coins arrondis + marge (barre preview "toujours ultra moche", capture d'écran à l'appui), 23/10/2026
 
 Tomyn, capture d'écran envoyée après le fix du défilé continu : "c'est toujours ultra moche".
