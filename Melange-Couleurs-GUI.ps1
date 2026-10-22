@@ -6841,18 +6841,16 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # animee en va-et-vient a chaque tick (pas de vraie progression chiffree disponible depuis le
     # runspace, voir le commentaire plus haut), masquee dans le "finally" ci-dessous, succes ou echec.
     # 23/10/2026, Tomyn (avec capture d'ecran) : "toujours aussi moche se rempli en quelques seconde
-    # et stagne" - confirme par un test PowerShell direct (pas une hypothese) : une variable scalaire
-    # simple ($directionBarre = 1 puis reassignee a l'interieur du Add_Tick) NE PERSISTE PAS ses
-    # reassignations d'un tic a l'autre a travers .GetNewClosure() - chaque appel du scriptblock cree
-    # sa PROPRE copie locale au lieu d'ecrire dans la portee capturee (meme famille de piege que le
-    # bug $script: documente plus haut dans ce fichier pres de "PAS de .GetNewClosure() ici", juste
-    # sur une variable locale cette fois). Resultat : $directionBarre revient TOUJOURS a 1 au tic
-    # suivant, la barre avance vers la droite, se cogne contre le bord, le "-1" assigne est jete, et
-    # au tic d'apres elle recalcule exactement la MEME position butee contre le bord - d'ou le blocage
-    # visuel exact observe sur la capture (bloc colle a droite, immobile). Teste et confirme qu'un
-    # tableau a 1 element (type reference, dont on mute l'ELEMENT au lieu de reassigner la variable
-    # elle-meme) survit correctement a travers les tics, contrairement au scalaire.
-    $directionBarre = @(1)
+    # et stagne" - le remplissage etait anime en va-et-vient avec une direction stockee dans une
+    # variable SCALAIRE reassignee a l'interieur du Add_Tick. Confirme par un test PowerShell direct
+    # (pas une hypothese) : une telle reassignation scalaire ne survit PAS d'un tic a l'autre a
+    # travers .GetNewClosure() (meme famille de piege que le bug $script: documente plus haut dans ce
+    # fichier, sur une variable locale cette fois) - la direction revenait donc toujours a "avance",
+    # la barre se cognait contre le bord et restait collee la pour de bon. Corrige une premiere fois
+    # avec un tableau a 1 element (mutation de l'ELEMENT, qui lui survit bien aux tics) puis, Tomyn
+    # toujours insatisfait du rendu du rebond lui-meme ("c'est bon mais elle est toujours ultra
+    # moche"), le rebond a ete abandonne entierement au profit d'un defile continu (voir le Add_Tick
+    # plus bas) - plus besoin d'aucune variable de direction.
     $overlayApercu = $etatPartage["__ProgressOverlay_${cle}__"]
     $pisteApercu = $etatPartage["__ProgressPiste_${cle}__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_${cle}__"]
@@ -6896,19 +6894,15 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            # Va-et-vient simple dans la piste (comme l'ancien Panel), borne a la largeur de
-            # $pisteApercu (pas $overlayApercu : la carte a des marges autour de la piste desormais).
-            # $directionBarre est un tableau a 1 element (voir le commentaire plus haut) : on mute
-            # $directionBarre[0], jamais $directionBarre lui-meme.
-            $pas = 10 * $directionBarre[0]
-            $nouveauLeft = $remplissageApercu.Left + $pas
-            if ($nouveauLeft -le 0) {
-                $nouveauLeft = 0
-                $directionBarre[0] = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
-                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
-                $directionBarre[0] = -1
-            }
+            # 23/10/2026, Tomyn (apres le fix du blocage) : "c'est bon mais elle est toujours ultra
+            # moche" - le va-et-vient fonctionne desormais, mais un rebond lineaire qui s'arrete net
+            # puis repart brutalement en sens inverse a chaque bord reste un effet visuel grossier
+            # en soi, carte ou pas. Remplace par un defile CONTINU (type "tapis roulant", jamais de
+            # rebond) : le bloc glisse toujours dans le meme sens, sort par la droite, puis reapparait
+            # hors-cadre a gauche et glisse a nouveau - l'effet classique d'une barre de chargement
+            # indeterminee native, sans le a-coup du rebond.
+            $nouveauLeft = $remplissageApercu.Left + 8
+            if ($nouveauLeft -ge $pisteApercu.Width) { $nouveauLeft = -$remplissageApercu.Width }
             $remplissageApercu.Left = $nouveauLeft
         }
         if (-not $resultatAsync.IsCompleted) { return }
@@ -7045,11 +7039,8 @@ $corpsFonctions
 
     # Meme carte-overlay que Mettre-A-Jour-Apercu (voir Creer-CarteProgressionApercu et son
     # commentaire) - la rotation interactive est plus courte (resolution reduite juste au-dessus)
-    # mais reste perceptible, vaut la peine d'etre montree ici aussi.
-    # 23/10/2026 : $directionBarre en tableau a 1 element, pas scalaire - voir le commentaire detaille
-    # dans Mettre-A-Jour-Apercu (bug confirme par test direct : une reassignation scalaire a
-    # l'interieur d'un Add_Tick GetNewClosure() ne survit pas d'un tic a l'autre).
-    $directionBarre = @(1)
+    # mais reste perceptible, vaut la peine d'etre montree ici aussi. Defile continu (pas de
+    # rebond), meme logique que Mettre-A-Jour-Apercu - voir son commentaire.
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_${cle}__"]
     $pisteApercu = $script:ApercuEtat["__ProgressPiste_${cle}__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_${cle}__"]
@@ -7076,15 +7067,8 @@ $corpsFonctions
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            $pas = 10 * $directionBarre[0]
-            $nouveauLeft = $remplissageApercu.Left + $pas
-            if ($nouveauLeft -le 0) {
-                $nouveauLeft = 0
-                $directionBarre[0] = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
-                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
-                $directionBarre[0] = -1
-            }
+            $nouveauLeft = $remplissageApercu.Left + 8
+            if ($nouveauLeft -ge $pisteApercu.Width) { $nouveauLeft = -$remplissageApercu.Width }
             $remplissageApercu.Left = $nouveauLeft
         }
         if (-not $resultatAsync.IsCompleted) { return }

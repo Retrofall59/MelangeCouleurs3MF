@@ -7,6 +7,24 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : remplacement du rebond par un défilé continu (barre preview "toujours ultra moche"), 23/10/2026
+
+Tomyn, une fois le blocage corrigé : "c'est bon mais elle est toujours ultra moche". Le va-et-vient
+fonctionnait désormais correctement, mais un rebond linéaire (vitesse constante, arrêt net puis
+repart brutalement en sens inverse à chaque bord) reste un effet visuel grossier en lui-même,
+carte ou pas - ce n'est tout simplement pas comme ça qu'une barre de chargement a l'air pro.
+
+Remplacé par un défilé continu, type tapis roulant : le bloc glisse toujours dans le même sens,
+sort par le bord droit de la piste, puis réapparaît hors-cadre à gauche et glisse à nouveau - plus
+jamais d'arrêt ni de changement de sens brutal. C'est l'effet classique d'une barre de chargement
+indéterminée (le même principe que le style natif "Marquee" essayé plus tôt, mais en gardant les
+couleurs et la carte de la marque). Plus besoin de variable de direction du tout - code simplifié
+d'autant.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix (confirmé par test direct) : vrai bug de fond du va-et-vient - scalaire qui ne survit pas à travers Add_Tick/GetNewClosure, 23/10/2026
 
 Tomyn, capture d'écran à l'appui : "toujours aussi moche se rempli en quelques seconde et stagne" -
