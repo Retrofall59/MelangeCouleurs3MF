@@ -7,6 +7,35 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : nuage de points - vraie cause enfin trouvée (FillMode), 22/10/2026 soir
+
+Les deux augmentations de taille de carré (1,6 → 2,6 → 4,4 px) changeaient à peine le rendu
+("toujour pas ca") - signal qui aurait dû alerter plus tôt : si agrandir un carré qui se chevauche
+de plus en plus avec ses voisins ne change presque rien, le problème n'est probablement pas la
+taille.
+
+**Cause réelle** : `GraphicsPath` utilise par défaut la règle de remplissage `Alternate`
+(pair-impair). Dès que deux formes du même chemin se chevauchent (systématique ici, avec des
+carrés voisins espacés d'environ 1 px et des côtés de plusieurs pixels), la zone de chevauchement
+est comptée deux fois - donc paire - donc **non remplie** par cette règle. Plus les carrés
+grossissaient, plus il y avait de zones de chevauchement ainsi "annulées", ce qui explique le
+quasi-statu-quo malgré les augmentations successives : le vrai bug sabordait précisément le
+mécanisme censé corriger le problème.
+
+**Correctif** : `FillMode = Winding` (règle du nombre d'enroulement non nul) sur chaque
+`GraphicsPath` de groupe - les formes qui se chevauchent fusionnent au lieu de s'annuler, du
+moment qu'elles tournent dans le même sens (le cas ici, `AddRectangle` construit toujours ses
+sommets dans le même ordre). Taille des carrés ramenée à une valeur raisonnable (1,4 px, 0,4 px de
+chevauchement) maintenant que le chevauchement fonctionne enfin comme prévu - plus besoin du flou
+des tailles précédentes qui tentaient (en vain) de compenser le vrai bug.
+
+Toujours pas de rendu Windows possible depuis cette session Linux pour vérifier visuellement -
+**à confirmer par Tomyn**, mais cette fois le diagnostic touche un mécanisme de rendu connu et
+bien documenté (règle de remplissage pair-impair vs nombre d'enroulement), pas une hypothèse sur
+le comportement non observable de la rasterisation.
+
+---
+
 ## Ajustement : nuage de points - 2e augmentation, saut plus large (22/10/2026, soir)
 
 1,3 (carrés 2,6 px) confirmé par Tomyn "nettement mieux" mais encore "pas encore ça" - texture

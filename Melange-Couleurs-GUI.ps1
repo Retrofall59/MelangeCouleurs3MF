@@ -3710,8 +3710,23 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
         $r = [int]($coul.R * $oQuantifie); $vv = [int]($coul.G * $oQuantifie); $b = [int]($coul.B * $oQuantifie)
         $cle = "$r,$vv,$b"
         if (-not $groupes.ContainsKey($cle)) {
+            $cheminGroupe = New-Object System.Drawing.Drawing2D.GraphicsPath
+            # 22/10/2026, Tomyn : "toujour pas ca" meme apres avoir fortement agrandi les carres
+            # (1,6 -> 2,6 -> 4,4 px) - la VRAIE cause trouvee en y repensant : FillMode par defaut
+            # d'un GraphicsPath est "Alternate" (regle pair-impair). Des QUE deux formes du meme
+            # chemin se chevauchent (systematique ici, avec des carres voisins espaces de ~1 px et
+            # des cotes de plusieurs pixels), la zone de chevauchement est comptee 2 fois = paire =
+            # NON remplie par la regle pair-impair - plus les carres etaient gros, plus il y avait
+            # de chevauchement, plus il y avait de zones ainsi "annulees", ce qui explique pourquoi
+            # grossir les carres ne changeait presque rien au rendu final (le probleme n'etait pas
+            # la taille, mais la regle de remplissage qui sabordait justement ce chevauchement).
+            # "Winding" (regle du nombre d'enroulement non nul) fusionne au contraire les formes
+            # qui se chevauchent sans jamais les annuler, du moment qu'elles tournent dans le meme
+            # sens - c'est le cas ici (AddPolygon/AddRectangle construisent toujours leurs sommets
+            # dans le meme ordre), donc aucun autre changement necessaire.
+            $cheminGroupe.FillMode = [System.Drawing.Drawing2D.FillMode]::Winding
             $groupes[$cle] = [PSCustomObject]@{
-                Chemin  = New-Object System.Drawing.Drawing2D.GraphicsPath
+                Chemin  = $cheminGroupe
                 Couleur = [System.Drawing.Color]::FromArgb($r, $vv, $b)
                 SommeZ  = 0.0
                 Compte  = 0
@@ -3752,16 +3767,17 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
         } else {
             $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
             $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
-            # 22/10/2026, Tomyn : 0.8 (1,6 px) -> "mieux mais pas encore ca" ; 1.3 (2,6 px) ->
-            # nettement mieux (silhouette bien visible, ombrage qui se devine) mais encore "pas
-            # encore ca" - la texture reste grainy/tramee au lieu d'un remplissage lisse. Les
-            # augmentations precedentes etaient trop prudentes (petits pas, +0.5 a chaque fois).
-            # Saut plus large cette fois (1.3 -> 2.2, carres de 4,4 px, chevauchement de 3,4 px
-            # avec les cellules voisines a 1 px) pour converger plus vite plutot que de multiplier
-            # les allers-retours - seul ce chiffre change, aucune autre logique touchee. Au prix
-            # d'un leger flou sur les bords fins si ca devient visible (carres plus gros = moins
-            # de details), un compromis acceptable face a l'aspect "nuage de points" denonce.
-            $DEMI_TAILLE_CARRE = 2.2
+            # 22/10/2026, Tomyn : 0.8, puis 1.3, puis 2.2 (px de demi-cote) - chaque augmentation
+            # changeait a peine le rendu, ce qui aurait du mettre la puce a l'oreille plus tot : le
+            # vrai probleme etait le FillMode "Alternate" du GraphicsPath (voir le commentaire plus
+            # haut, pres de la creation du groupe) qui ANNULAIT les zones de chevauchement au lieu
+            # de les fusionner - plus les carres etaient gros, plus il y avait de chevauchement
+            # annule, d'ou le quasi-statu-quo malgre les augmentations. Maintenant que le
+            # GraphicsPath est en "Winding" (fusionne au lieu d'annuler), un chevauchement modeste
+            # suffit a nouveau - retour a une taille raisonnable (1,4 px, 0,4 px de chevauchement
+            # avec les cellules voisines a 1 px) pour un rendu net, sans le flou inutile des
+            # tailles precedentes qui compensaient (a tort) le vrai bug.
+            $DEMI_TAILLE_CARRE = 0.7
             $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
             $grp.Chemin.AddRectangle($rect)
         }
