@@ -7,6 +7,16 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Ajustement : nuage de points - polish final (22/10/2026, soir)
+
+Confirmé par Tomyn ("peut mieux faire") : le correctif FillMode (voir entrée ci-dessous) a réglé
+le fond du problème - forme et ombrage nettement visibles, plus de nuage de points - reste un
+grain résiduel sur les zones claires/en bordure. Léger coup de pouce : `$DEMI_TAILLE_CARRE` 0,7 →
+0,95 (carrés de 1,9 px, 0,9 px de chevauchement) pour lisser ce grain, maintenant que le
+chevauchement fusionne correctement. À confirmer par Tomyn.
+
+---
+
 ## Correctif : nuage de points - vraie cause enfin trouvée (FillMode), 22/10/2026 soir
 
 Les deux augmentations de taille de carré (1,6 → 2,6 → 4,4 px) changeaient à peine le rendu

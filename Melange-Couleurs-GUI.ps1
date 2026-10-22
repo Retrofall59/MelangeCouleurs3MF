@@ -3777,7 +3777,13 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             # suffit a nouveau - retour a une taille raisonnable (1,4 px, 0,4 px de chevauchement
             # avec les cellules voisines a 1 px) pour un rendu net, sans le flou inutile des
             # tailles precedentes qui compensaient (a tort) le vrai bug.
-            $DEMI_TAILLE_CARRE = 0.7
+            # 22/10/2026, Tomyn : "peut mieux faire" avec 0.7 (1,4 px) - le fond est acquis (forme
+            # et ombrage nettement visibles, plus de nuage de points), reste un grain residuel sur
+            # les zones claires/en bordure. Leger coup de pouce (0.7 -> 0.95, soit 1,9 px, 0,9 px de
+            # chevauchement) pour lisser ce grain, maintenant que le chevauchement fusionne
+            # correctement (Winding) - pas besoin de grossir beaucoup, juste assez pour fermer les
+            # derniers petits interstices.
+            $DEMI_TAILLE_CARRE = 0.95
             $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
             $grp.Chemin.AddRectangle($rect)
         }
