@@ -16,14 +16,46 @@
 ' automatiquement au demarrage (passerelle depuis Coloriser-STL, bouton "Analyser les couleurs"
 ' sur un resultat de galerie). Sans argument, comportement inchange (double-clic normal).
 
-Dim objFSO, objShell, strDossier, strCheminScript, strCommande, strFichierInitial
+' 22/10/2026, suite au bug "ca prend 20-30 minutes" sur "Suggerer un trio pour ce fichier..." -
+' meme apres avoir reduit le nombre de combinaisons testees (voir le commentaire dans
+' Obtenir-MeilleureComboDepuisCouleursPourFichier), l'ecart entre mes estimations (quelques
+' secondes a quelques minutes, testees sous PowerShell 7 "pwsh") et le temps reel chez Tomyn
+' (20-30 minutes) restait trop grand pour s'expliquer par le nombre de combinaisons seul. Ce
+' lanceur demarrait toujours avec "powershell.exe" - Windows PowerShell 5.1, le moteur historique
+' integre a Windows, connu pour etre nettement plus lent que PowerShell 7 sur du code avec
+' beaucoup de petits appels de fonction/calculs numeriques repetes (exactement le profil de
+' Trouver-MeilleurDosage/Convertir-RGBVersLab, appeles des centaines de milliers de fois pour une
+' seule suggestion). On essaie maintenant d'abord "pwsh.exe" (PowerShell 7, si installe) et on ne
+' retombe sur l'ancien "powershell.exe" que s'il est absent - aucun risque de casser quoi que ce
+' soit chez quelqu'un qui n'a pas PowerShell 7, juste un gain potentiel important chez qui l'a (ou
+' l'installe).
+Dim objFSO, objShell, strDossier, strCheminScript, strCommande, strFichierInitial, strMoteur
 
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 strDossier = objFSO.GetParentFolderName(WScript.ScriptFullName)
 strCheminScript = strDossier & "\Melange-Couleurs-GUI.ps1"
 
 Set objShell = CreateObject("WScript.Shell")
-strCommande = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & strCheminScript & """"
+
+' Detection de pwsh.exe (PowerShell 7) sans fenetre visible et sans arreter le script si absent -
+' "where.exe" renvoie un code de sortie non nul (capte via On Error Resume Next + Err.Clear) quand
+' la commande n'est pas trouvee, plutot que de lever une exception VBScript.
+strMoteur = "powershell.exe"
+On Error Resume Next
+Dim objExec
+Set objExec = objShell.Exec("where.exe pwsh.exe")
+If Err.Number = 0 Then
+    Do While objExec.Status = 0
+        WScript.Sleep 50
+    Loop
+    If objExec.ExitCode = 0 Then
+        strMoteur = "pwsh.exe"
+    End If
+End If
+Err.Clear
+On Error Goto 0
+
+strCommande = strMoteur & " -NoProfile -ExecutionPolicy Bypass -File """ & strCheminScript & """"
 If WScript.Arguments.Count > 0 Then
     strFichierInitial = WScript.Arguments(0)
     strCommande = strCommande & " -FichierInitial """ & strFichierInitial & """"

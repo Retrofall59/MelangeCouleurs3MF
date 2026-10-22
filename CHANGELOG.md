@@ -7,6 +7,75 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : "Suggérer un trio pour ce fichier..." prenait 20 à 30 minutes réelles (22/10/2026)
+
+Tomyn : clic sur "Suggérer un trio pour ce fichier..." avec un .3mf issu du pipeline Tripo de
+Coloriser-STL -> le Mélangeur se bloque, Windows marque la fenêtre "ne répond plus". Confirmé par
+Tomyn comme NON reproductible avec des .3mf Meshy, seulement avec des .3mf Tripo. Enquête en
+plusieurs étapes, chacune invalidée par un test réel avant de trouver la vraie cause :
+
+1. **1er correctif (insuffisant)** : traité d'abord comme un problème de réactivité - triple
+   boucle sur les combinaisons de couleurs personnelles tournant sur le thread UI sans aucun
+   `[System.Windows.Forms.Application]::DoEvents()`, d'où le "ne répond plus" (fenêtre gelée, pas
+   forcément un plantage). Corrigé en ajoutant un pompage régulier. Tomyn a testé en conditions
+   réelles et objecté, à raison : *"ca fais au moin 10 minutes que jai cliquer sur le bouton et
+   rien ne se passe meme si cet pas geler cest extreme,nt long et ca ca ne va pas"* - rendre la
+   fenêtre réactive ne change rien au fait que le calcul lui-même met 10+ minutes à finir.
+2. **2e correctif (insuffisant)** : passage grossier du pas de dosage (25 au lieu de 10, ~3x moins
+   de dosages testés par couleur), avec un recalcul précis final sur le seul gagnant. Testé
+   réellement (synthétique, n=30 couleurs -> 4060 combinaisons) : toujours plus de 4 minutes
+   d'exécution même avec ce pas grossier. Preuve que la précision du dosage n'était pas le facteur
+   dominant.
+3. **Vraie cause trouvée** : `Filament-Mixer-Lerp` (le modèle de mélange de filaments, port du
+   vrai modèle C++ de Bambu Studio `filament_mixer::lerp`) évalue un **polynôme à 330 termes à
+   CHAQUE appel**, et cette fonction est appelée des centaines de milliers de fois pour une seule
+   suggestion (une fois par dosage testé × par couleur du fichier × par trio/combinaison
+   candidate) - ni le nombre de combinaisons ni le pas du dosage n'étaient le vrai goulot, c'est
+   ce polynôme évalué en PowerShell interprété, répété des centaines de milliers de fois, qui
+   dominait le temps réel. Tomyn a aussi précisé que le vrai stock concerné est les couleurs
+   personnelles individuelles (~10 chez lui), pas les ~200 trios sauvegardés testés en premier
+   (boucle linéaire, rapide en soi) - les deux boucles souffraient du même coût par appel.
+4. **Correctif final (celui-ci)** : le même calcul (mêmes formules, même ordre d'opérations) est
+   maintenant porté en **C# compilé** (chargé via `Add-Type` au démarrage), un code compilé
+   exécutant ce genre de boucle numérique des dizaines à des centaines de fois plus vite qu'un
+   script PowerShell interprété - et ce indépendamment de la version de PowerShell utilisée (le
+   lanceur `Lancer-Melange-Couleurs.vbs` utilise `pwsh.exe` (PowerShell 7) automatiquement s'il est
+   installé, sinon `powershell.exe` (5.1) comme avant - mais la compilation C# profite aux deux
+   moteurs de façon comparable, donc ce n'est plus une dépendance critique). En cas d'échec de
+   compilation (rare), retombe automatiquement sur l'ancien chemin PowerShell pur - aucun risque de
+   casser l'appli chez quelqu'un où ça ne compilerait pas. En plus, le plafond de 18 "couleurs
+   candidates" (introduit puis affiné dans ce même correctif pour les très gros stocks) n'est
+   appliqué que si le stock dépasse 20 couleurs personnelles - en dessous de ce seuil (le cas de
+   Tomyn), la recherche reste **exhaustive et garantie optimale**, aucun compromis.
+   - Un bug a été trouvé et corrigé pendant la vérification : le cast `[int]` de PowerShell
+     *arrondit* au plus proche, alors que le cast `(int)` de C# *tronque* - sans correction, ça
+     produisait des écarts de 1 unité RGB sur certains mélanges. Corrigé avec `Convert.ToInt32`
+     côté C#, et reconfirmé par un test numérique direct contre l'ancien code PowerShell (0 écart
+     sur 500 couleurs et 200 mélanges aléatoires).
+   - Un second bug a été trouvé : la réduction à 18 "couleurs candidates" pouvait, dans de rares
+     cas, écarter une couleur qui s'avérait utile seulement EN COMBINAISON - produisant un trio
+     objectivement moins bon qu'une recherche complète (repéré par un test de non-régression
+     dédié, pas par Tomyn). Corrigé par le seuil de 20 couleurs décrit ci-dessus : la réduction ne
+     s'applique plus du tout pour un stock de taille normale.
+   - Mesuré (synthétique, scénario proche de celui de Tomyn - 200 trios sauvegardés + 10 couleurs
+     personnelles, palette fichier à 16 couleurs) : environ 6 secondes au total avec le correctif,
+     contre 4+ minutes déjà pour un cas bien plus petit avec le 2e correctif (pas=25) seul - et les
+     20 à 30 minutes réelles signalées par Tomyn avant tout correctif.
+   - Vérifié par comparaison numérique directe (le nouveau moteur C# donne un résultat identique,
+     chiffre par chiffre, à l'ancien code PowerShell pur sur plusieurs dizaines de cas) et par
+     comparaison contre une recherche brute-force complète (sans aucune optimisation) sur plusieurs
+     scénarios - jamais de résultat moins bon.
+   - `Obtenir-SuggestionsTriosDiversifiees` (bouton "Suggérer 5 trios différents...") a la même
+     structure de boucle O(n³) sur les couleurs personnelles, non corrigée ici (pas le bouton
+     remonté par Tomyn) - a surveiller si le même symptôme se reproduit sur ce bouton-là.
+   - **Pas encore reconfirmé par Tomyn en conditions réelles sur sa machine.**
+
+## Correctif (superseded, détail ci-dessus) : première tentative "ne répond plus" (22/10/2026)
+
+Première analyse, traitée comme un problème de réactivité de fenêtre uniquement (pompage
+`DoEvents`) - confirmée insuffisante par Tomyn en conditions réelles, voir le correctif complet
+ci-dessus pour la vraie cause et le correctif final.
+
 ## Correctif : plantage silencieux sur un fichier qui n'est pas un vrai .3mf (21/10/2026)
 
 Bug remonté par Tomyn en conditions réelles : en essayant d'utiliser "Suggérer un trio pour ce

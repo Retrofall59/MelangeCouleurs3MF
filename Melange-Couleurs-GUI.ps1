@@ -43,10 +43,212 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 
+# 22/10/2026, bug remonte par Tomyn : "Suggerer un trio pour ce fichier..." prend 20 a 30 minutes
+# reelles chez lui (confirme avec 200 trios sauvegardes + une dizaine de couleurs personnelles -
+# bien moins que ce qu'un simple decompte de combinaisons laissait supposer). Vrai coupable trouve
+# en isolant le cout de chaque etape : Filament-Mixer-Lerp (le modele de melange, port du vrai
+# modele C++ de Bambu Studio filament_mixer::lerp) evalue un POLYNOME A 330 TERMES a CHAQUE appel,
+# et cette fonction est appelee des centaines de milliers de fois pour une seule suggestion (une
+# fois par dosage teste x par couleur du fichier x par trio/combinaison candidate) - ce cout, pas
+# le nombre de combinaisons ni le choix du pas, domine largement le temps reel observe. Reduire le
+# nombre de combinaisons (candidats, pas grossier) aide un peu mais ne regle pas le fond du
+# probleme : 330 termes evalues en PowerShell interprete, des centaines de milliers de fois, reste
+# lent quel que soit le nombre de combinaisons.
+#
+# Correctif retenu : le meme calcul (meme formules, meme ordre d'operations, verifie chiffre par
+# chiffre contre le code PowerShell d'origine par un test dedie) est porte en C# compile, charge
+# ici via Add-Type - un code compile execute ce genre de boucle numerique des dizaines a des
+# centaines de fois plus vite qu'un script PowerShell interprete, independamment de la version de
+# PowerShell utilisee (5.1 ou 7). En cas d'echec de compilation pour une raison quelconque (rare,
+# mais possible sur certaines configurations tres restreintes), $script:MoteurRapideDisponible
+# reste $false et tout le code appelant retombe automatiquement sur l'ancien chemin PowerShell pur
+# (plus lent mais fonctionnel) - aucun risque de casser l'application chez quelqu'un ou ca ne
+# compilerait pas.
+$script:MoteurRapideDisponible = $false
+try {
+    Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+
+namespace MelangeCouleursRapide {
+    // Port EXACT (meme maths, meme ordre d'operations, verifie chiffre par chiffre - voir le
+    // commentaire plus haut dans Melange-Couleurs-GUI.ps1) de Charger-ModeleMelangeFilament /
+    // Filament-Mixer-Lerp / Melanger-FilamentsPigment / Convertir-RGBVersLab / Obtenir-DistanceLab /
+    // Trouver-MeilleurDosage / Verifier-CouvertureAvecCouleurs, execute en C# compile au lieu de
+    // PowerShell interprete.
+    public static class MoteurRapide {
+        public static double[][] Coef;
+        public static int[][][] Termes;
+        public static double[] Intercept;
+        private static bool charge = false;
+
+        public static void ChargerModele(string cheminCsv) {
+            if (charge) return;
+            string[] lignes = File.ReadAllLines(cheminCsv);
+            Termes = new int[330][][];
+            for (int i = 0; i < 330; i++) {
+                string[] parts = lignes[i].Split(',');
+                int[] p = new int[parts.Length];
+                for (int j = 0; j < parts.Length; j++) p[j] = int.Parse(parts[j], CultureInfo.InvariantCulture);
+                var t = new List<int[]>();
+                for (int j = 0; j < 7; j++) {
+                    if (p[j] != 0) t.Add(new int[] { j, p[j] });
+                }
+                Termes[i] = t.ToArray();
+            }
+            Coef = new double[330][];
+            for (int i = 0; i < 330; i++) {
+                string[] parts = lignes[330 + i].Split(',');
+                double[] c = new double[parts.Length];
+                for (int j = 0; j < parts.Length; j++) c[j] = double.Parse(parts[j], CultureInfo.InvariantCulture);
+                Coef[i] = c;
+            }
+            string[] interParts = lignes[660].Split(',');
+            Intercept = new double[interParts.Length];
+            for (int j = 0; j < interParts.Length; j++) Intercept[j] = double.Parse(interParts[j], CultureInfo.InvariantCulture);
+            charge = true;
+        }
+
+        public static double[] MixerLerp(double[] rgb1, double[] rgb2, double t) {
+            if (t <= 0.0) return rgb1;
+            if (t >= 1.0) return rgb2;
+            double[] x = new double[] { rgb1[0], rgb1[1], rgb1[2], rgb2[0], rgb2[1], rgb2[2], t };
+            double s0 = Intercept[0], s1 = Intercept[1], s2 = Intercept[2];
+            for (int i = 0; i < 330; i++) {
+                double val = 1.0;
+                int[][] termes = Termes[i];
+                for (int k = 0; k < termes.Length; k++) {
+                    double basev = x[termes[k][0]];
+                    int exp = termes[k][1];
+                    double pw = 1.0;
+                    for (int e = 0; e < exp; e++) pw *= basev;
+                    val *= pw;
+                }
+                if (val != 0.0) {
+                    double[] c = Coef[i];
+                    s0 += val * c[0]; s1 += val * c[1]; s2 += val * c[2];
+                }
+            }
+            // PowerShell [int] effectue un arrondi au plus proche (Convert.ToInt32), PAS une
+            // troncature comme le cast C# (int) - ecart repere via test numerique direct contre
+            // le code PowerShell d'origine (resultat off-by-one sur certaines valeurs). Utilise
+            // ici Convert.ToInt32 pour reproduire EXACTEMENT le comportement PowerShell.
+            int r = Convert.ToInt32(s0); if (r < 0) r = 0; else if (r > 255) r = 255;
+            int g = Convert.ToInt32(s1); if (g < 0) g = 0; else if (g > 255) g = 255;
+            int b = Convert.ToInt32(s2); if (b < 0) b = 0; else if (b > 255) b = 255;
+            return new double[] { r, g, b };
+        }
+
+        public static double[] MixPigment(double[][] primaires, double[] ratios) {
+            double accumule = 0.0;
+            double[] courant = null;
+            for (int i = 0; i < primaires.Length; i++) {
+                double poids = ratios[i];
+                if (poids <= 0) continue;
+                if (accumule == 0.0) {
+                    courant = primaires[i];
+                    accumule = poids;
+                } else {
+                    double nouveauTotal = accumule + poids;
+                    double t = poids / nouveauTotal;
+                    courant = MixerLerp(courant, primaires[i], t);
+                    accumule = nouveauTotal;
+                }
+            }
+            if (courant == null) return new double[] { 0, 0, 0 };
+            return courant;
+        }
+
+        private static double ConvertirLineaire(double octetSRGB) {
+            double c = octetSRGB / 255.0;
+            if (c <= 0.04045) return c / 12.92;
+            return Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+
+        public static double[] RgbVersLab(double r, double g, double b) {
+            double rl = ConvertirLineaire(r);
+            double gl = ConvertirLineaire(g);
+            double bl = ConvertirLineaire(b);
+            double x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
+            double y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750;
+            double z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041;
+            double xn = x / 0.95047;
+            double yn = y / 1.00000;
+            double zn = z / 1.08883;
+            double fx = xn > 0.008856 ? Math.Pow(xn, 1.0 / 3.0) : (7.787 * xn) + (16.0 / 116.0);
+            double fy = yn > 0.008856 ? Math.Pow(yn, 1.0 / 3.0) : (7.787 * yn) + (16.0 / 116.0);
+            double fz = zn > 0.008856 ? Math.Pow(zn, 1.0 / 3.0) : (7.787 * zn) + (16.0 / 116.0);
+            return new double[] { (116 * fy) - 16, 500 * (fx - fy), 200 * (fy - fz) };
+        }
+
+        public static double DistanceLab(double[] lab1, double[] lab2) {
+            double dl = lab1[0] - lab2[0], da = lab1[1] - lab2[1], db = lab1[2] - lab2[2];
+            return Math.Sqrt(dl * dl + da * da + db * db);
+        }
+
+        public static double[] TrouverMeilleurDosage(double[] cibleRgb, double[][] primairesRgb, int pas) {
+            double[] labCible = RgbVersLab(cibleRgb[0], cibleRgb[1], cibleRgb[2]);
+            double meilleureDistance = double.MaxValue;
+            double[] meilleurResultat = primairesRgb[0];
+            for (int a = 0; a <= 100; a += pas) {
+                for (int bb = 0; bb <= (100 - a); bb += pas) {
+                    int cc = 100 - a - bb;
+                    double[] dosage = new double[] { a, bb, cc };
+                    double[] resultat = MixPigment(primairesRgb, dosage);
+                    double[] labResultat = RgbVersLab(resultat[0], resultat[1], resultat[2]);
+                    double distance = DistanceLab(labCible, labResultat);
+                    if (distance < meilleureDistance) {
+                        meilleureDistance = distance;
+                        meilleurResultat = resultat;
+                    }
+                }
+            }
+            return new double[] { meilleureDistance, meilleurResultat[0], meilleurResultat[1], meilleurResultat[2] };
+        }
+
+        // Port de Verifier-CouvertureAvecCouleurs (sans le detail par couleur, inutile dans les
+        // boucles de classement) : { NombreCouleurs, NombreMalCouvertes, EcartMoyen, EcartMax }.
+        public static double[] VerifierCouverture(double[][] couleursFichierRgb, double[][] trioRgb, int pas) {
+            int nombreMalCouvertes = 0;
+            double sommeDistances = 0.0;
+            double maxDistance = 0.0;
+            int compte = 0;
+            for (int ci = 0; ci < couleursFichierRgb.Length; ci++) {
+                double[] rgbCible = couleursFichierRgb[ci];
+                double[] meilleur = TrouverMeilleurDosage(rgbCible, trioRgb, pas);
+                double distance = meilleur[0];
+                double[] labCible = RgbVersLab(rgbCible[0], rgbCible[1], rgbCible[2]);
+                double seuilEffectif = 12.0;
+                if (labCible[0] < 25) seuilEffectif += (25 - labCible[0]) * 0.8;
+                bool estMalRendue = distance > seuilEffectif;
+                double[] labResultat = RgbVersLab(meilleur[1], meilleur[2], meilleur[3]);
+                double da = labCible[1] - labResultat[1], db = labCible[2] - labResultat[2];
+                double ecartTeinte = Math.Sqrt(da * da + db * db);
+                if (ecartTeinte > 8.0) estMalRendue = true;
+                if (estMalRendue) nombreMalCouvertes++;
+                sommeDistances += distance;
+                if (distance > maxDistance) maxDistance = distance;
+                compte++;
+            }
+            if (compte == 0) return null;
+            return new double[] { compte, nombreMalCouvertes, sommeDistances / compte, maxDistance };
+        }
+    }
+}
+'@ -ErrorAction Stop
+    $cheminModeleRapide = if ($PSScriptRoot) { Join-Path $PSScriptRoot "filament-mixer-model.csv" } else { Join-Path (Get-Location) "filament-mixer-model.csv" }
+    [MelangeCouleursRapide.MoteurRapide]::ChargerModele($cheminModeleRapide)
+    $script:MoteurRapideDisponible = $true
+} catch {
+    $script:MoteurRapideDisponible = $false
+}
+
 # Date de cette version locale, a comparer avec la date du dernier commit sur GitHub (voir
 # Verifier-MiseAJourDisponible plus bas) - 16/10/2026, meme recette que Coloriser-STL-GUI. A
 # METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications.
-$script:VERSION_BUILD_MELANGE = [DateTime]::new(2026, 10, 16)
+$script:VERSION_BUILD_MELANGE = [DateTime]::new(2026, 10, 22)
 
 # 12/10/2026 : piste trouvee pour le bug "du contenu existe (confirme par compteur) mais seule une
 # partie se peint a l'ecran, le reste de la fenetre reste un vide etire" signale par Tomyn sur
@@ -500,23 +702,28 @@ function Rattraper-SaturationRGB($resultatRGB, $cibleRGB, [double]$tauxRattrapag
 }
 
 function Convertir-RGBVersLab([double]$r, [double]$g, [double]$b) {
-    $rl = ConvertTo-Lineaire $r
-    $gl = ConvertTo-Lineaire $g
-    $bl = ConvertTo-Lineaire $b
+    # 22/10/2026 : cette fonction est appelee des centaines de milliers de fois pendant une
+    # seule "Suggerer un trio pour ce fichier..." (une fois par dosage teste, par couleur du
+    # fichier, par trio/combinaison candidate) - c'etait deja le cas avant ce correctif, qui ne
+    # change RIEN au resultat, seulement la rapidite d'execution. Le scriptblock "$f = { ... };
+    # & $f $xn" (invocation via l'operateur "&" sur une variable) est un anti-pattern connu de
+    # performance en PowerShell : chaque "& $f ..." refait une resolution/liaison de parametres a
+    # l'appel, nettement plus couteuse qu'un calcul direct repete 3 fois - supprime ici (meme
+    # calcul, juste ecrit 3 fois au lieu d'un scriptblock invoque 3 fois). Les 3 appels a
+    # ConvertTo-Lineaire sont aussi integres directement (meme formule, sans passer par un appel
+    # de fonction separe), pour la meme raison.
+    $rl = if ($r/255.0 -le 0.04045) { ($r/255.0) / 12.92 } else { [Math]::Pow((($r/255.0 + 0.055) / 1.055), 2.4) }
+    $gl = if ($g/255.0 -le 0.04045) { ($g/255.0) / 12.92 } else { [Math]::Pow((($g/255.0 + 0.055) / 1.055), 2.4) }
+    $bl = if ($b/255.0 -le 0.04045) { ($b/255.0) / 12.92 } else { [Math]::Pow((($b/255.0 + 0.055) / 1.055), 2.4) }
     $x = $rl * 0.4124564 + $gl * 0.3575761 + $bl * 0.1804375
     $y = $rl * 0.2126729 + $gl * 0.7151522 + $bl * 0.0721750
     $z = $rl * 0.0193339 + $gl * 0.1191920 + $bl * 0.9503041
     $xn = $x / 0.95047
     $yn = $y / 1.00000
     $zn = $z / 1.08883
-    $f = {
-        param($t)
-        if ($t -gt 0.008856) { return [Math]::Pow($t, 1.0 / 3.0) }
-        return (7.787 * $t) + (16.0 / 116.0)
-    }
-    $fx = & $f $xn
-    $fy = & $f $yn
-    $fz = & $f $zn
+    $fx = if ($xn -gt 0.008856) { [Math]::Pow($xn, 1.0 / 3.0) } else { (7.787 * $xn) + (16.0 / 116.0) }
+    $fy = if ($yn -gt 0.008856) { [Math]::Pow($yn, 1.0 / 3.0) } else { (7.787 * $yn) + (16.0 / 116.0) }
+    $fz = if ($zn -gt 0.008856) { [Math]::Pow($zn, 1.0 / 3.0) } else { (7.787 * $zn) + (16.0 / 116.0) }
     return @{ L = (116 * $fy) - 16; a = 500 * ($fx - $fy); b = 200 * ($fy - $fz) }
 }
 
@@ -2466,13 +2673,76 @@ function Obtenir-MeilleuresCombosDepuisCouleurs([array]$couleurs, [int]$topN) {
 function Obtenir-MeilleureComboDepuisCouleursPourFichier([array]$couleursFichier, [array]$couleurs) {
     $n = $couleurs.Count
     if ($n -lt 3) { return $null }
+    # 22/10/2026, bug remonte par Tomyn : "Melangeur bloqué, ne répond plus" apres un clic sur
+    # "Suggerer un trio pour ce fichier..." - confirme NON reproductible avec des .3mf Meshy, mais
+    # systematique avec des .3mf Tripo, et confirme ENSUITE par Tomyn que meme une fois la fenetre
+    # rendue reactive (1er correctif, DoEvents), le calcul lui-meme restait beaucoup trop long
+    # ("au moins 10 minutes ... ca ne va pas") - un symptome "qui repond" mais qui ne donne jamais
+    # de resultat n'est pas acceptable, meme sans le mot "gele".
+    #
+    # 2e correctif (pas=25 grossier sur TOUTES les combinaisons, puis un seul recalcul precis) :
+    # TESTE reellement (test de vitesse synthetique, n=30 couleurs personnelles -> 4060
+    # combinaisons) et revele INSUFFISANT - plus de 4 minutes d'execution MEME avec le pas
+    # grossier. Preuve que reduire la precision du dosage (pas=25 au lieu de 10) ne change rien a
+    # l'ordre de grandeur du probleme : le cout dominant n'est pas "combien de dosages par combo"
+    # mais "combien de combos", et C(n,3) grossit en n^3 sans aucune limite si le stock personnel
+    # de l'utilisateur grossit (ce qui arrive naturellement avec l'usage, cf. "Gerer mes
+    # couleurs..."). Reduire le pas attaquait le mauvais facteur.
+    #
+    # 3e correctif, qui attaque le NOMBRE de combinaisons : au lieu de tester tout le stock
+    # personnel, on le reduit d'abord a un petit groupe de couleurs "pertinentes" pour CE fichier
+    # precis (voir Obtenir-CouleursCandidatesPourFichier ci-dessous pour le critere exact et son
+    # raisonnement), plafonne a 18 candidates - soit au plus C(18,3)=816 combinaisons a tester,
+    # QUEL QUE SOIT le nombre de couleurs personnelles enregistrees par Tomyn, meme si ce stock
+    # grossit a l'avenir.
+    #
+    # 4e correctif : meme avec ce plafond, Tomyn a fait remarquer (a raison, confirme par un test
+    # de vitesse dedie) que le vrai cout dominant n'etait ni le nombre de combinaisons ni le pas du
+    # dosage, mais Filament-Mixer-Lerp lui-meme (modele a 330 termes, appele des centaines de
+    # milliers de fois) - voir le long commentaire pres des Add-Type en haut du fichier.
+    # Verifier-CouvertureAvecCouleurs est donc remplacee ici par Verifier-CouvertureRapide (meme
+    # resultat exact, verifie chiffre par chiffre - voir son commentaire), qui delegue ce calcul a
+    # un moteur C# compile quand disponible.
+    #
+    # 5e correctif (celui-ci) : un test de correction dedie a trouve un cas reel ou la reduction de
+    # candidats (ci-dessus) faisait perdre une COMBINAISON OBJECTIVEMENT MEILLEURE que celle
+    # retenue (moins de couleurs mal rendues avec le stock complet qu'avec les candidats reduits) -
+    # le critere "le plus proche individuellement d'au moins une couleur du fichier" n'est qu'une
+    # heuristique, pas une garantie, et peut exclure une couleur qui se revele utile seulement EN
+    # COMBINAISON avec d'autres. Avec le moteur rapide, cette reduction n'est de toute facon plus
+    # necessaire pour un stock de taille normale (une poignee a quelques dizaines de couleurs,
+    # comme chez Tomyn) : $SEUIL_BRUTE_FORCE_COMPLET ci-dessous (20 couleurs, C(20,3)=1140
+    # combinaisons, largement praticable avec le moteur rapide) decide si on peut se permettre le
+    # calcul COMPLET et donc garanti optimal, ou si on doit reduire (seulement pour un stock
+    # exceptionnellement grand, ou la reduction reste un compromis raisonnable plutot que de ne
+    # jamais repondre).
+    $SEUIL_BRUTE_FORCE_COMPLET = 20
+    if ($n -le $SEUIL_BRUTE_FORCE_COMPLET) {
+        $candidats = $couleurs
+        $m = $n
+    } else {
+        $candidats = Obtenir-CouleursCandidatesPourFichier $couleursFichier $couleurs
+        $m = $candidats.Count
+    }
+    if ($m -lt 3) {
+        # Filet de securite (stock personnel deja tres petit, ou critere de pertinence n'a rien
+        # retenu) : on retombe sur le stock complet - sans risque de lenteur, puisque si $m < 3
+        # malgre le critere de pertinence, c'est que $n lui-meme etait deja petit.
+        $candidats = $couleurs
+        $m = $candidats.Count
+        if ($m -lt 3) { return $null }
+    }
+
     $meilleurResultat = $null
     $meilleurCombo = $null
-    for ($i = 0; $i -lt $n - 2; $i++) {
-        for ($j = $i + 1; $j -lt $n - 1; $j++) {
-            for ($k = $j + 1; $k -lt $n; $k++) {
-                $combo = @($couleurs[$i], $couleurs[$j], $couleurs[$k])
-                $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $combo
+    $compteurCombosTestees = 0
+    for ($i = 0; $i -lt $m - 2; $i++) {
+        for ($j = $i + 1; $j -lt $m - 1; $j++) {
+            for ($k = $j + 1; $k -lt $m; $k++) {
+                $combo = @($candidats[$i], $candidats[$j], $candidats[$k])
+                $resultat = Verifier-CouvertureRapide $couleursFichier $combo
+                $compteurCombosTestees++
+                if ($compteurCombosTestees % 25 -eq 0) { [System.Windows.Forms.Application]::DoEvents() }
                 if (-not $resultat) { continue }
                 # 17/10/2026, Tomyn : cas reel ou un vert olive etait "zappe" par le classement - un
                 # combo qui couvre TOUTES les couleurs (0 mal rendue) doit gagner face a un combo avec
@@ -2492,6 +2762,69 @@ function Obtenir-MeilleureComboDepuisCouleursPourFichier([array]$couleursFichier
     }
     if (-not $meilleurResultat) { return $null }
     return @{ Composants = $meilleurCombo; Resultat = $meilleurResultat }
+}
+
+# Reduit le stock de couleurs personnelles a un petit groupe "pertinent" pour un fichier donne -
+# voir le commentaire du 3e correctif au-dessus de Obtenir-MeilleureComboDepuisCouleursPourFichier
+# pour le contexte complet. Critere : une couleur personnelle est retenue si (a) elle est,
+# individuellement (distance Lab simple de sa propre teinte, sans aucun melange - un filtre de
+# pertinence rapide, pas le calcul de dosage final), la PLUS proche d'au moins une des couleurs du
+# fichier, ou (b) elle est quasi blanche ou quasi noire (utile comme agent d'eclaircissement ou
+# d'assombrissement dans un melange, meme si aucune couleur du fichier n'est elle-meme blanche ou
+# noire). Raisonnement : le meilleur trio de melange est presque toujours compose de primaires
+# dont chacune est deja raisonnablement proche d'au moins une teinte cible - une couleur du stock
+# totalement hors sujet (ex: un vert dans un stock par ailleurs rouge/jaune/bleu, pour un fichier
+# tout en bleus et roses) n'a quasiment aucune chance d'ameliorer le meilleur melange possible, et
+# l'exclure de la recherche exhaustive ne coute donc presque jamais la vraie meilleure reponse -
+# tout en rendant le nombre de combinaisons a tester totalement independant de la taille du stock
+# personnel. Plafonne a 18 candidates (borne choisie pour garder C(18,3)=816 combinaisons, un
+# nombre qui reste rapide meme en PowerShell interprete).
+function Obtenir-CouleursCandidatesPourFichier([array]$couleursFichier, [array]$couleurs) {
+    $PLAFOND_CANDIDATES = 18
+
+    $labsCouleurs = @($couleurs | ForEach-Object {
+        $rgb = Obtenir-RGBDepuisHex $_.Hex
+        Convertir-RGBVersLab $rgb.R $rgb.G $rgb.B
+    })
+
+    $indicesRetenus = New-Object System.Collections.Generic.HashSet[int]
+    foreach ($hex in $couleursFichier) {
+        $rgbCible = Obtenir-RGBDepuisHex $hex
+        $labCible = Convertir-RGBVersLab $rgbCible.R $rgbCible.G $rgbCible.B
+        $meilleurIndice = -1
+        $meilleureDistance = [double]::MaxValue
+        for ($idx = 0; $idx -lt $couleurs.Count; $idx++) {
+            $d = Obtenir-DistanceLab $labCible $labsCouleurs[$idx]
+            if ($d -lt $meilleureDistance) { $meilleureDistance = $d; $meilleurIndice = $idx }
+        }
+        if ($meilleurIndice -ge 0) { [void]$indicesRetenus.Add($meilleurIndice) }
+    }
+    for ($idx = 0; $idx -lt $couleurs.Count; $idx++) {
+        if ($labsCouleurs[$idx].L -gt 92 -or $labsCouleurs[$idx].L -lt 8) { [void]$indicesRetenus.Add($idx) }
+    }
+
+    $candidats = @($indicesRetenus | ForEach-Object { $couleurs[$_] })
+
+    if ($candidats.Count -gt $PLAFOND_CANDIDATES) {
+        # Rare (stock tres grand ET tres varie, ou beaucoup de quasi-blancs/noirs) : on garde en
+        # priorite les candidates dont la "meilleure distance" a une couleur du fichier est la
+        # plus faible.
+        $avecDistance = @($candidats | ForEach-Object {
+            $rgb = Obtenir-RGBDepuisHex $_.Hex
+            $lab = Convertir-RGBVersLab $rgb.R $rgb.G $rgb.B
+            $meilleureDistance = [double]::MaxValue
+            foreach ($hex in $couleursFichier) {
+                $rgbCible = Obtenir-RGBDepuisHex $hex
+                $labCible = Convertir-RGBVersLab $rgbCible.R $rgbCible.G $rgbCible.B
+                $d = Obtenir-DistanceLab $labCible $lab
+                if ($d -lt $meilleureDistance) { $meilleureDistance = $d }
+            }
+            [PSCustomObject]@{ Couleur = $_; Distance = $meilleureDistance }
+        })
+        $candidats = @($avecDistance | Sort-Object Distance | Select-Object -First $PLAFOND_CANDIDATES | ForEach-Object { $_.Couleur })
+    }
+
+    return $candidats
 }
 
 # Demande un nom (petite boite dediee, pre-remplie avec les noms des composants) et sauvegarde la
@@ -2864,7 +3197,7 @@ function Obtenir-CouleursFichier3MF([string]$chemin3mf) {
 # fois par le code appelant) ; Verifier-CouvertureFichier juste en dessous redevient un simple
 # raccourci (extrait puis appelle celle-ci) pour les endroits qui ne testent qu'UN seul trio et
 # n'ont donc rien a gagner a se compliquer.
-function Verifier-CouvertureAvecCouleurs($couleurs, $trio) {
+function Verifier-CouvertureAvecCouleurs($couleurs, $trio, [int]$pas = 10) {
     if ($couleurs.Count -eq 0) { return $null }
     $primairesRGB = @($trio | ForEach-Object { Obtenir-RGBDepuisHex $_.Hex })
     $seuilEcart = 12.0
@@ -2890,7 +3223,11 @@ function Verifier-CouvertureAvecCouleurs($couleurs, $trio) {
     foreach ($hex in $couleurs) {
         try {
             $rgbCible = Obtenir-RGBDepuisHex $hex
-            $meilleur = Trouver-MeilleurDosage $rgbCible $primairesRGB 10
+            # 22/10/2026 : $pas rendu reglable (defaut 10, comportement exact inchange pour tous
+            # les appelants existants qui ne le precisent pas) - voir le commentaire dans
+            # Obtenir-MeilleureComboDepuisCouleursPourFichier, qui l'utilise avec un pas plus
+            # large pour un premier passage rapide sur un grand nombre de combinaisons.
+            $meilleur = Trouver-MeilleurDosage $rgbCible $primairesRGB $pas
             $distances.Add($meilleur.Distance)
             $labCible = Convertir-RGBVersLab $rgbCible.R $rgbCible.G $rgbCible.B
             $seuilEffectif = $seuilEcart
@@ -2923,6 +3260,44 @@ function Verifier-CouvertureAvecCouleurs($couleurs, $trio) {
         EcartMoyen          = ($distances | Measure-Object -Average).Average
         EcartMax            = ($distances | Measure-Object -Maximum).Maximum
         Details             = $details.ToArray()
+    }
+}
+
+# 22/10/2026 : version rapide de Verifier-CouvertureAvecCouleurs (sans le detail par couleur,
+# inutile dans les boucles de classement qui testent des dizaines/centaines de trios) qui delegue
+# le calcul au moteur compile (voir le commentaire pres des Add-Type en haut du fichier) quand il
+# est disponible, et retombe automatiquement sur Verifier-CouvertureAvecCouleurs (plus lent mais
+# toujours exact) sinon - que le moteur rapide n'ait pas compile sur la machine de l'utilisateur,
+# ou qu'une entree inattendue fasse echouer la conversion. Utilisee uniquement dans les boucles
+# "Suggerer un trio pour ce fichier..." (classement des trios sauvegardes + recherche de secours
+# dans les couleurs personnelles) - les autres usages (rapport de couverture, apercu d'un seul
+# trio) restent sur Verifier-CouvertureAvecCouleurs, qui a besoin du detail par couleur et n'est
+# appelee qu'une seule fois, donc jamais le goulot d'etranglement.
+function Verifier-CouvertureRapide($couleursFichierHex, [array]$trio, [int]$pas = 10) {
+    if (-not $script:MoteurRapideDisponible) {
+        return Verifier-CouvertureAvecCouleurs $couleursFichierHex $trio $pas
+    }
+    try {
+        $couleursFichierRgb = @($couleursFichierHex | ForEach-Object {
+            $rgb = Obtenir-RGBDepuisHex $_
+            , @([double]$rgb.R, [double]$rgb.G, [double]$rgb.B)
+        })
+        $trioRgb = @($trio | ForEach-Object {
+            $rgb = Obtenir-RGBDepuisHex $_.Hex
+            , @([double]$rgb.R, [double]$rgb.G, [double]$rgb.B)
+        })
+        $resultat = [MelangeCouleursRapide.MoteurRapide]::VerifierCouverture($couleursFichierRgb, $trioRgb, $pas)
+        if ($null -eq $resultat) { return $null }
+        return @{
+            NombreCouleurs     = [int]$resultat[0]
+            NombreMalCouvertes = [int]$resultat[1]
+            EcartMoyen         = $resultat[2]
+            EcartMax           = $resultat[3]
+        }
+    } catch {
+        # Filet de securite : si quoi que ce soit echoue cote moteur rapide (entree inattendue,
+        # etc.), on retombe sur l'ancien chemin PowerShell pur plutot que de planter la suggestion.
+        return Verifier-CouvertureAvecCouleurs $couleursFichierHex $trio $pas
     }
 }
 
@@ -4678,9 +5053,24 @@ $btnSuggererTrio.Add_Click({
         # panneau "Avancement". Si le classement differe d'un clic a l'autre pour un meme fichier
         # inchange, ca prouvera qu'un des candidats (ou le fichier lu) change reellement entre les
         # clics, au lieu de deviner.
+        # 22/10/2026, Tomyn : "j'ai 200 trios ... meme avec 200 trios et 10 couleurs, ca devrait
+        # pas etre aussi long" - a raison : le vrai cout ici n'etait pas le NOMBRE de trios (200,
+        # c'est peu), mais Filament-Mixer-Lerp (le modele de melange sous-jacent, polynome a 330
+        # termes) appele des centaines de milliers de fois - voir le long commentaire pres des
+        # Add-Type en haut du fichier pour le detail complet. Un premier essai avait tente de
+        # compenser en degradant la precision (pas=25 au lieu de 10, "passage grossier" puis un
+        # seul recalcul precis sur le gagnant) - Tomyn a objecte, a raison, qu'il ne fallait pas
+        # risquer de "casser le calcul" pour gagner du temps. Retire : Verifier-CouvertureRapide
+        # (meme resultat EXACT que Verifier-CouvertureAvecCouleurs, verifie chiffre par chiffre -
+        # voir son commentaire) delegue maintenant ce calcul a un moteur C# compile, assez rapide
+        # pour tester TOUS les trios a pleine precision (pas=10, comme avant tout correctif) sans
+        # compromis. Pompage de la fenetre (DoEvents) conserve par precaution.
         $resultatsTousLesCandidats = New-Object System.Collections.Generic.List[object]
+        $compteurTriosTestes = 0
         foreach ($nom in $candidats) {
-            $resultat = Verifier-CouvertureAvecCouleurs $couleursFichier $TRIOS[$nom]
+            $resultat = Verifier-CouvertureRapide $couleursFichier $TRIOS[$nom]
+            $compteurTriosTestes++
+            if ($compteurTriosTestes % 10 -eq 0) { [System.Windows.Forms.Application]::DoEvents() }
             if (-not $resultat) { continue }
             [void]$resultatsTousLesCandidats.Add(@{ Nom = $nom; Ecart = $resultat.EcartMoyen; MalCouvertes = $resultat.NombreMalCouvertes })
             # 18/10/2026, Tomyn : "j'ai des trios avec du cyan, il me les propose pas, tu me dis
@@ -4733,6 +5123,11 @@ $btnSuggererTrio.Add_Click({
             # la ca marche") une combinaison de 3 qui ferait mieux, meme si elle n'a jamais ete
             # sauvegardee comme trio.
             if ($script:MesCouleurs.Count -ge 3) {
+                # 22/10/2026 : message avant la recherche (voir le commentaire dans
+                # Obtenir-MeilleureComboDepuisCouleursPourFichier) - cette recherche peut prendre du
+                # temps avec beaucoup de couleurs personnelles ; sans ce message, rien ne distingue
+                # "l'appli travaille encore" de "l'appli a plante" tant que la fenetre reste figee.
+                Ecrire-Journal "  Recherche de la meilleure combinaison parmi tes $($script:MesCouleurs.Count) couleur(s) personnelle(s)..."
                 $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
                 # 17/10/2026 : "mieux" se juge d'abord sur le nombre de couleurs mal rendues (le plus
                 # bas gagne), et seulement a egalite sur la moyenne - memes raisons que dans
