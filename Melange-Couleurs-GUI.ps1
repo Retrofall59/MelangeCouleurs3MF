@@ -3648,40 +3648,80 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # maintenant borne par la RESOLUTION de l'image (au plus largeur x hauteur triangles dessines),
     # plus par la densite du maillage d'origine - plus rapide que les 2 tentatives precedentes sur
     # un maillage dense, pas seulement plus correct visuellement.
-    $cellulesOccupees = New-Object 'System.Collections.Generic.HashSet[Int64]'
-    $indicesFinaux = New-Object System.Collections.Generic.List[int]
-    # 22/10/2026, Tomyn : "peux mieux faire" meme apres le correctif FillMode (Winding) - le fond
-    # (forme + ombrage) est maintenant net, mais la texture reste GRANULEUSE (grain type "sable")
-    # sur toute la surface, pas juste en bordure. Cause : chaque cellule ne garde qu'UN SEUL
-    # triangle representant, et sur un maillage dense/bruite (sortie Tripo - normales par face tres
-    # variables meme sur une zone localement plate), l'ombrage ($ombre) de CE triangle precis peut
-    # differer fortement de celui de ses voisins immediats, purement par bruit de geometrie - d'ou
-    # un niveau de gris qui saute triangle a triangle, meme une fois le dessin (FillMode) corrige.
-    # Correctif : on accumule ici la moyenne d'ombrage de TOUS les triangles qui tombent dans une
-    # meme cellule (pas seulement celui choisi pour le dessin), et on utilisera cette moyenne au
-    # lieu de l'ombrage individuel du representant au moment de quantifier la couleur - lisse le
-    # bruit sans toucher a la geometrie ni au FillMode deja corriges.
-    $ombreSommeCellule = @{}
-    $ombreCompteCellule = @{}
+    # 22/10/2026, Tomyn : "c'est tres moche, il y a des manques, c'est tres flou" - meme apres le
+    # correctif FillMode + l'ombrage moyenne par cellule. Capture d'ecran zoomee fournie par Tomyn :
+    # les "manques" sont des PIXELS ISOLES (pas des zones entieres) ou le fond gris perce a travers,
+    # au milieu d'une zone par ailleurs bien couverte. Cause reelle, differente du FillMode : la
+    # garantie "par construction" du 3e correctif (voir plus haut) ne couvre que la cellule du
+    # CENTRE projete de chaque triangle - un triangle sous-pixel dont le centre tombe dans la
+    # cellule A peut tres bien avoir un sommet qui deborde dans la cellule B voisine, sans qu'AUCUN
+    # autre triangle du maillage n'ait jamais son propre centre dans B. B reste alors totalement
+    # vide (trou d'un pixel), meme en plein milieu de la silhouette - la frequence de ce cas depend
+    # directement de la taille des triangles par rapport a la grille (frequent ici, maillage Tripo
+    # tres dense avec des triangles plus petits qu'une cellule).
+    # Correctif : chaque triangle sous-pixel revendique desormais ses 4 cellules candidates (centre
+    # projete + ses 3 sommets), pas seulement celle de son centre - comble ces trous ponctuels. Pour
+    # eviter de payer ce cout (jusqu'a 4 operations au lieu d'1) sur les tres nombreux triangles qui
+    # ne debordent PAS de leur cellule (l'immense majorite), un chemin rapide reste utilise des que
+    # les 3 sommets et le centre tombent dans la MEME cellule.
+    # Meme principe qu'avant pour l'ombrage : on accumule ici la moyenne de TOUS les triangles qui
+    # revendiquent une cellule donnee (plus seulement celui garde pour le dessin), utilisee ensuite
+    # pour quantifier la couleur et lisser le grain de bruit de normales du maillage.
+    $cellules = @{}
     foreach ($i in $indices) {
         if ($aireEcran[$i] -le 0) { continue }
-        $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
-        $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
-        $cellX = [int64][math]::Floor($cx)
-        $cellY = [int64][math]::Floor($cy)
-        # Cle unique par cellule (decalage large pour eviter toute collision X/Y, largement
-        # suffisant pour n'importe quelle taille d'apercu realiste, meme en cas de depassement
-        # leger des bords de l'image du a l'arrondi).
-        $cle = ($cellX * 2000000L) + $cellY + 1000000L
-        if ($ombreSommeCellule.ContainsKey($cle)) {
-            $ombreSommeCellule[$cle] += $ombre[$i]
-            $ombreCompteCellule[$cle] += 1
-        } else {
-            $ombreSommeCellule[$cle] = $ombre[$i]
-            $ombreCompteCellule[$cle] = 1
+        $sx1 = $marge + ($p1x[$i] - $minX) * $echelle
+        $sy1 = $hauteur - ($marge + ($p1y[$i] - $minY) * $echelle)
+        $sx2 = $marge + ($p2x[$i] - $minX) * $echelle
+        $sy2 = $hauteur - ($marge + ($p2y[$i] - $minY) * $echelle)
+        $sx3 = $marge + ($p3x[$i] - $minX) * $echelle
+        $sy3 = $hauteur - ($marge + ($p3y[$i] - $minY) * $echelle)
+        $scx = ($sx1 + $sx2 + $sx3) / 3.0
+        $scy = ($sy1 + $sy2 + $sy3) / 3.0
+        $cellXc = [int64][math]::Floor($scx)
+        $cellYc = [int64][math]::Floor($scy)
+
+        if ($aireEcran[$i] -ge 4.0) {
+            # Grand triangle : sa vraie geometrie (AddPolygon) couvre deja correctement tout ce
+            # qu'elle touche plus bas - une seule cellule (celle de son centre) suffit a le
+            # retrouver au moment du dessin, pas besoin de la revendication multi-cellule.
+            $cle = ($cellXc * 2000000L) + $cellYc + 1000000L
+            if ($cellules.ContainsKey($cle)) {
+                $cellules[$cle].SommeOmbre += $ombre[$i]
+                $cellules[$cle].CompteOmbre += 1
+            } else {
+                $cellules[$cle] = [PSCustomObject]@{ Triangle = $i; CellX = $cellXc; CellY = $cellYc; SommeOmbre = $ombre[$i]; CompteOmbre = 1 }
+            }
+            continue
         }
-        if ($cellulesOccupees.Add($cle)) {
-            [void]$indicesFinaux.Add($i)
+
+        $cellX1 = [int64][math]::Floor($sx1); $cellY1 = [int64][math]::Floor($sy1)
+        $cellX2 = [int64][math]::Floor($sx2); $cellY2 = [int64][math]::Floor($sy2)
+        $cellX3 = [int64][math]::Floor($sx3); $cellY3 = [int64][math]::Floor($sy3)
+
+        if ($cellX1 -eq $cellXc -and $cellY1 -eq $cellYc -and $cellX2 -eq $cellXc -and $cellY2 -eq $cellYc -and $cellX3 -eq $cellXc -and $cellY3 -eq $cellYc) {
+            # Chemin rapide : triangle entierement dans une seule cellule, rien a ajouter de plus.
+            $cle = ($cellXc * 2000000L) + $cellYc + 1000000L
+            if ($cellules.ContainsKey($cle)) {
+                $cellules[$cle].SommeOmbre += $ombre[$i]
+                $cellules[$cle].CompteOmbre += 1
+            } else {
+                $cellules[$cle] = [PSCustomObject]@{ Triangle = $i; CellX = $cellXc; CellY = $cellYc; SommeOmbre = $ombre[$i]; CompteOmbre = 1 }
+            }
+        } else {
+            # Chemin lent : le triangle deborde de sa cellule centrale - revendique les 4 cellules
+            # candidates (dedup naturelle via ContainsKey, un sommet peut retomber sur le centre).
+            $cxCandidats = [int64[]]@($cellXc, $cellX1, $cellX2, $cellX3)
+            $cyCandidats = [int64[]]@($cellYc, $cellY1, $cellY2, $cellY3)
+            for ($k = 0; $k -lt 4; $k++) {
+                $cle = ($cxCandidats[$k] * 2000000L) + $cyCandidats[$k] + 1000000L
+                if ($cellules.ContainsKey($cle)) {
+                    $cellules[$cle].SommeOmbre += $ombre[$i]
+                    $cellules[$cle].CompteOmbre += 1
+                } else {
+                    $cellules[$cle] = [PSCustomObject]@{ Triangle = $i; CellX = $cxCandidats[$k]; CellY = $cyCandidats[$k]; SommeOmbre = $ombre[$i]; CompteOmbre = 1 }
+                }
+            }
         }
     }
     $compteurDessines = 0
@@ -3714,8 +3754,9 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # suffisant pour un apercu rapide, pas un rendu 3D exact (voir le README).
     $NIVEAUX_OMBRE = 16
     $groupes = @{}
-    foreach ($i in $indicesFinaux) {
+    foreach ($cel in $cellules.Values) {
         $compteurDessines++
+        $i = $cel.Triangle
         $hexCouleur = $couleurs[$i]
         if (-not $cacheCouleurBase.ContainsKey($hexCouleur)) {
             try {
@@ -3725,12 +3766,9 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             }
         }
         $coul = $cacheCouleurBase[$hexCouleur]
-        # Ombrage lisse : moyenne de tous les triangles de la cellule (voir commentaire plus haut,
-        # correctif grain/bruit), pas seulement celui de ce triangle representant.
-        $cxCellule = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
-        $cyCellule = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
-        $cleCellule = ([int64][math]::Floor($cxCellule) * 2000000L) + [int64][math]::Floor($cyCellule) + 1000000L
-        $ombreLissee = $ombreSommeCellule[$cleCellule] / $ombreCompteCellule[$cleCellule]
+        # Ombrage lisse : moyenne de TOUS les triangles qui revendiquent cette cellule (voir
+        # commentaire plus haut, correctif grain/bruit), pas seulement du triangle representant.
+        $ombreLissee = $cel.SommeOmbre / $cel.CompteOmbre
         $niveau = [math]::Round((($ombreLissee - 0.35) / 0.65) * ($NIVEAUX_OMBRE - 1))
         $oQuantifie = 0.35 + ($niveau / [double]($NIVEAUX_OMBRE - 1)) * 0.65
         $r = [int]($coul.R * $oQuantifie); $vv = [int]($coul.G * $oQuantifie); $b = [int]($coul.B * $oQuantifie)
@@ -3791,8 +3829,15 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             )
             $grp.Chemin.AddPolygon($pts)
         } else {
-            $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
-            $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
+            # 22/10/2026, Tomyn : "des manques" meme avec la revendication multi-cellule plus haut -
+            # le carre etait jusqu'ici centre sur le centroide REEL du triangle representant, qui
+            # peut tomber n'importe ou a l'interieur de sa cellule (pres d'un bord). Desormais chaque
+            # cellule revendiquee est dessinee centree sur SA PROPRE cellule (CellX+0.5, CellY+0.5),
+            # pas sur la position reelle du triangle - garantit que cette cellule precise est
+            # entierement couverte par son carre, quelle que soit la position d'origine du triangle
+            # qui l'a revendiquee.
+            $cx = $cel.CellX + 0.5
+            $cy = $cel.CellY + 0.5
             # 22/10/2026, Tomyn : 0.8, puis 1.3, puis 2.2 (px de demi-cote) - chaque augmentation
             # changeait a peine le rendu, ce qui aurait du mettre la puce a l'oreille plus tot : le
             # vrai probleme etait le FillMode "Alternate" du GraphicsPath (voir le commentaire plus

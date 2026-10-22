@@ -7,6 +7,33 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : nuage de points - trous ponctuels (revendication multi-cellule), 22/10/2026, soir
+
+Retour de Tomyn après capture d'écran zoomée : "c'est très moche, il y a des manques, c'est très
+flou". Les "manques" sont des pixels isolés où le fond gris perce, au milieu d'une zone par
+ailleurs bien couverte - pas une zone entière vide.
+
+**Cause réelle** : la garantie "par construction" du 3e correctif (sélection par grille) ne
+couvrait que la cellule du **centre projeté** de chaque triangle. Un triangle sous-pixel dont le
+centre tombe en cellule A peut très bien avoir un sommet qui déborde en cellule B voisine, sans
+qu'aucun AUTRE triangle du maillage n'ait jamais son propre centre dans B - B reste alors
+totalement vide, même en plein milieu de la silhouette. Fréquent sur ce maillage (sortie Tripo très
+dense, triangles plus petits qu'une cellule d'écran).
+
+**Correctif** : chaque triangle sous-pixel revendique désormais ses 4 cellules candidates (centre
+projeté + ses 3 sommets), pas seulement celle de son centre - comble ces trous ponctuels. Un
+chemin rapide (1 seule revendication) reste utilisé dès que les 3 sommets et le centre tombent
+dans la même cellule, pour ne pas payer ce coût sur l'immense majorité des triangles qui ne
+débordent pas. Par la même occasion, chaque carré est maintenant centré sur le **centre de la
+cellule qu'il représente** (et non plus sur la position réelle, parfois excentrée, du triangle
+représentant) - garantit que cette cellule précise est toujours entièrement couverte. Validé par
+un test synthétique (triangle débordant volontairement sur une cellule voisine vide) - toujours
+pas de test visuel possible dans cet environnement (`System.Drawing` indisponible sous Linux) - à
+confirmer par Tomyn, y compris sur le temps de calcul (coût en légère hausse sur les triangles à
+cheval entre deux cellules).
+
+---
+
 ## Correctif : nuage de points - grain résiduel (ombrage moyenné par cellule), 22/10/2026, soir
 
 Confirmé par Tomyn ("peux mieux faire") : le polish 0,95 n'a pas réglé le grain - forme et
