@@ -7,6 +7,38 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : bug "nuage de points" - 2e tentative, cause réelle trouvée (22/10/2026, soir)
+
+Le 1er correctif du jour (plancher de 15% de triangles conservés, voir entrée ci-dessous) était
+**insuffisant** - confirmé par capture d'écran réelle de Tomyn (aperçu toujours "très troué") sur
+`IMG_0250_colorise...tripo_convert...3mf`. En y repensant : le problème n'était pas le NOMBRE de
+triangles conservés, mais LESQUELS. Le seuil par aire écran favorise mécaniquement les zones
+PLATES vues de face (grands triangles projetés) et élimine en priorité les zones de forte courbure
+ou vues de profil (triangles mécaniquement petits à l'écran, même géométriquement normaux) - sur
+un maillage dense, ça concentre les triangles conservés sur quelques zones plates et vide presque
+tout le reste, donnant l'aspect "nuage de points" **quel que soit le nombre total conservé** (le
+1er correctif en gardait pourtant 3x plus que l'original, sans effet visuel - la quantité n'était
+pas le problème).
+
+**Correctif réel** : remplacement du seuil par aire (sélection biaisée) par un sous-échantillonnage
+UNIFORME (un triangle sur N, réparti sur l'ordre des indices d'origine) - garantit une couverture
+homogène de TOUTE la surface quelle que soit sa courbure, au lieu d'une sélection concentrée sur
+les zones plates. Le budget de triangles dessinés est calé sur le ratio triangles/pixel déjà
+observé et accepté par Tomyn sur un maillage normal (Water_Weird : 111717 dessinés pour une image
+300x260, soit ~1,43 triangle/pixel) - donc pas de régression de vitesse attendue par rapport au
+comportement actuel sur les maillages normaux (vérifié : la formule reproduit quasi exactement ce
+chiffre, 111540 contre 111717 réels, à 0,2% près). Testé sur données simulées : maillage normal
+inchangé (toujours ~33% conservés, régulièrement), maillage Tripo dense passe à un échantillonnage
+parfaitement régulier (1 triangle sur 13, soit ~7,7%, réparti uniformément au lieu d'être concentré).
+
+**Toujours pas de rendu Windows possible depuis cette session Linux pour vérifier visuellement** -
+cette 2e tentative est mieux fondée (corrige le vrai défaut : la sélection biaisée, pas juste la
+quantité), mais reste **à confirmer par Tomyn**. Si encore insuffisant après ce correctif, le
+budget de triangles (`$RATIO_TRIANGLES_PAR_PIXEL`, actuellement 1,43/pixel) est le paramètre à
+augmenter - au prix d'un temps de dessin plus long.
+
+---
+
 ## Améliorations du Mélangeur après le correctif de vitesse (22/10/2026)
 
 Suite du correctif précédent (moteur C#) : Tomyn a signalé que l'appli "propose toujours le même

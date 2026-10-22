@@ -3627,35 +3627,40 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # plus que la division par ~4 attendue) - le seuil est maintenant mis a l'echelle avec la surface
     # reelle de l'image (largeur x hauteur) par rapport a cette reference, pour garder une densite de
     # triangles affiches comparable quelle que soit la taille demandee.
-    $seuilAirePixels = 0.15 * ($largeur * $hauteur) / (300.0 * 260.0)
+    # 22/10/2026, Tomyn : bug "nuage de points" - 1er correctif (seuil d'aire "plancher" a 15% des
+    # triangles) INSUFFISANT, confirme par capture d'ecran reelle (toujours tres troue/en points).
+    # Vraie cause trouvee en y repensant : le probleme n'est pas seulement COMBIEN de triangles
+    # survivent, mais LESQUELS. Un seuil par AIRE ECRAN favorise mecaniquement les zones PLATES
+    # vues de face (grands triangles projetes) et elimine en priorite les zones de forte courbure
+    # ou vues de profil (triangles mecaniquement petits a l'ecran, meme geometriquement normaux) -
+    # sur un maillage dense, ca concentre les triangles conserves sur quelques zones plates et vide
+    # presque tout le reste : exactement l'aspect "nuage de points" denonce, quel que soit le
+    # NOMBRE total conserve (le 1er correctif en gardait pourtant 3x plus, sans effet visuel).
+    # Remplace par un sous-echantillonnage UNIFORME (un triangle sur N, repartis dans l'ordre des
+    # indices d'origine, PAS par aire) : couverture homogene de TOUTE la surface quelle que soit sa
+    # courbure, a nombre de triangles dessines a peu pres EGAL au comportement actuel sur un
+    # maillage normal (donc pas de regression de vitesse attendue - voir le calcul du budget
+    # ci-dessous, cale sur le ratio triangles/pixel deja observe et accepte par Tomyn sur
+    # Water_Weird : 111717 dessines pour une image 300x260, soit ~1,43 triangle/pixel).
+    $RATIO_TRIANGLES_PAR_PIXEL = 1.43
+    $PLAFOND_DESSINES_ABSOLU = 300000
+    $budgetDessines = [Math]::Min([int]([Math]::Round($RATIO_TRIANGLES_PAR_PIXEL * $largeur * $hauteur)), $PLAFOND_DESSINES_ABSOLU)
 
-    # 22/10/2026, Tomyn : bug "nuage de points" repris - sur les maillages TRES denses (export
-    # Tripo, ex. 1,4M triangles), ce seuil fixe (mis a l'echelle seulement sur la taille de
-    # l'IMAGE, pas sur la densite du maillage) finit par eliminer l'immense majorite des
-    # triangles : chacun d'eux est mecaniquement plus petit a l'ecran quand il y en a beaucoup
-    # plus pour couvrir la meme surface. Verifie sur un vrai log Tomyn : 111717/305253 = 37%
-    # dessines sur un maillage normal, contre seulement 66351/1429794 = 4,6% sur un maillage
-    # Tripo dense - 8x moins dense, d'ou l'aspect "nuage de points" (des trous partout) au lieu
-    # d'une surface pleine, alors que le rendu restait pourtant rapide.
-    # Correctif : on borne ce seuil pour garantir qu'au moins un PLANCHER de triangles survit,
-    # quelle que soit la densite du maillage - sans toucher au seuil existant (donc sans rien
-    # changer pour les maillages normaux, qui le depassent deja largement). Le scan pour compter
-    # combien de triangles passent le seuil actuel est une simple boucle lineaire (rapide meme a
-    # 1,4M elements) - le tri couteux (O(n log n)) n'est fait QUE si ce plancher n'est pas atteint,
-    # donc aucun cout ajoute sur le cas normal, deja bien au-dessus du plancher.
-    $totalTriangles = $aireEcran.Count
-    if ($totalTriangles -gt 0) {
-        $nombrePassantSeuilFixe = 0
-        foreach ($a in $aireEcran) { if ($a -ge $seuilAirePixels) { $nombrePassantSeuilFixe++ } }
-        $PLANCHER_COUVERTURE = 0.15
-        $PLAFOND_DESSINES_ABSOLU = 250000
-        $cibleMinimum = [Math]::Min([int]([math]::Ceiling($PLANCHER_COUVERTURE * $totalTriangles)), $PLAFOND_DESSINES_ABSOLU)
-        if ($nombrePassantSeuilFixe -lt $cibleMinimum -and $cibleMinimum -lt $totalTriangles) {
-            $airesTriees = $aireEcran.Clone()
-            [System.Array]::Sort($airesTriees)
-            $indexSeuil = [Math]::Max(0, $totalTriangles - $cibleMinimum)
-            $seuilAirePixels = $airesTriees[$indexSeuil]
+    # $indices est deja l'ordre "peintre" (arriere -> avant, voir le tri plus haut) - on y retire
+    # uniquement les triangles degenerescents (aire nulle ou negative, numeriquement invisibles de
+    # toute facon), puis on sous-echantillonne UNIFORMEMENT si besoin pour tenir le budget.
+    $indicesVisibles = New-Object System.Collections.Generic.List[int]
+    foreach ($i in $indices) {
+        if ($aireEcran[$i] -gt 0) { [void]$indicesVisibles.Add($i) }
+    }
+    if ($indicesVisibles.Count -gt $budgetDessines -and $budgetDessines -gt 0) {
+        $pasEchantillon = [Math]::Ceiling($indicesVisibles.Count / [double]$budgetDessines)
+        $indicesFinaux = New-Object System.Collections.Generic.List[int]
+        for ($idx = 0; $idx -lt $indicesVisibles.Count; $idx += $pasEchantillon) {
+            [void]$indicesFinaux.Add($indicesVisibles[$idx])
         }
+    } else {
+        $indicesFinaux = $indicesVisibles
     }
     $compteurDessines = 0
 
@@ -3687,8 +3692,7 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # suffisant pour un apercu rapide, pas un rendu 3D exact (voir le README).
     $NIVEAUX_OMBRE = 16
     $groupes = @{}
-    foreach ($i in $indices) {
-        if ($aireEcran[$i] -lt $seuilAirePixels) { continue }
+    foreach ($i in $indicesFinaux) {
         $compteurDessines++
         $hexCouleur = $couleurs[$i]
         if (-not $cacheCouleurBase.ContainsKey($hexCouleur)) {
