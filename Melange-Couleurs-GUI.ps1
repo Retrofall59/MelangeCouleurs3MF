@@ -3752,14 +3752,16 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
         } else {
             $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
             $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
-            # 22/10/2026, Tomyn : avec 0.8 (carres de 1,6 px), confirme "mieux mais pas encore ca"
-            # - la silhouette est desormais bien visible (preuve que le diagnostic "rasterisation
-            # sous-pixel non fiable" etait le bon), mais le chevauchement entre cellules voisines
-            # (0,6 px) restait trop faible pour fusionner completement les points en zones pleines.
-            # Augmente a 1.3 (carres de 2,6 px, soit 1,6 px de chevauchement avec les cellules
-            # voisines, espacees de 1 px) pour un rendu plus plein - seul ce chiffre change,
-            # aucune autre logique touchee.
-            $DEMI_TAILLE_CARRE = 1.3
+            # 22/10/2026, Tomyn : 0.8 (1,6 px) -> "mieux mais pas encore ca" ; 1.3 (2,6 px) ->
+            # nettement mieux (silhouette bien visible, ombrage qui se devine) mais encore "pas
+            # encore ca" - la texture reste grainy/tramee au lieu d'un remplissage lisse. Les
+            # augmentations precedentes etaient trop prudentes (petits pas, +0.5 a chaque fois).
+            # Saut plus large cette fois (1.3 -> 2.2, carres de 4,4 px, chevauchement de 3,4 px
+            # avec les cellules voisines a 1 px) pour converger plus vite plutot que de multiplier
+            # les allers-retours - seul ce chiffre change, aucune autre logique touchee. Au prix
+            # d'un leger flou sur les bords fins si ca devient visible (carres plus gros = moins
+            # de details), un compromis acceptable face a l'aspect "nuage de points" denonce.
+            $DEMI_TAILLE_CARRE = 2.2
             $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
             $grp.Chemin.AddRectangle($rect)
         }

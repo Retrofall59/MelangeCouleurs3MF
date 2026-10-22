@@ -7,6 +7,17 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Ajustement : nuage de points - 2e augmentation, saut plus large (22/10/2026, soir)
+
+1,3 (carrés 2,6 px) confirmé par Tomyn "nettement mieux" mais encore "pas encore ça" - texture
+toujours grainy au lieu d'un remplissage lisse. Les deux ajustements précédents avançaient par
+petits pas (+0,5) ; passage à un saut plus large cette fois pour converger plus vite :
+`$DEMI_TAILLE_CARRE` 1,3 → 2,2 (carrés de 4,4 px, 3,4 px de chevauchement avec les cellules
+voisines). Seul changement, même logique. Compromis assumé : des carrés plus gros peuvent flouter
+légèrement les bords fins, acceptable face à l'aspect "nuage de points". À confirmer par Tomyn.
+
+---
+
 ## Ajustement : nuage de points - taille des carrés augmentée (22/10/2026, soir)
 
 Confirmé par Tomyn ("c'est mieux mais c'est pas encore ça") : le diagnostic de la 4e tentative
