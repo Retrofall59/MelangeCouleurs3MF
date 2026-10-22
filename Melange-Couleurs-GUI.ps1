@@ -428,7 +428,7 @@ function Rendre-ComboBoxPlate($combo, [bool]$avecPastillesTrio = $false) {
             $yPastille = $e.Bounds.Y + 3
             foreach ($couleurTrio in $trioAffiche) {
                 try {
-                    $couleurGdi = [System.Drawing.ColorTranslator]::FromHtml($couleurTrio.Hex)
+                    $couleurGdi = Convertir-HexEnCouleurGdi($couleurTrio.Hex)
                     $pinceauPastille = New-Object System.Drawing.SolidBrush($couleurGdi)
                     $e.Graphics.FillRectangle($pinceauPastille, $xPastille, $yPastille, $taillePastille, $taillePastille)
                     $e.Graphics.DrawRectangle([System.Drawing.Pens]::Gray, $xPastille, $yPastille, $taillePastille, $taillePastille)
@@ -613,6 +613,37 @@ function Obtenir-RGBDepuisHex([string]$hex) {
 
 function Obtenir-HexDepuisRGB([int]$r, [int]$g, [int]$b) {
     return "#{0:X2}{1:X2}{2:X2}" -f $r, $g, $b
+}
+
+# 22/10/2026, Tomyn : "les couleurs de la preview... violet... ne prend pas les couleurs du fichier
+# d'origine" - bug confirme par test DIRECT (pas une hypothese) : [ColorTranslator]::FromHtml ne
+# gere PAS le format RGBA 8 chiffres (#RRGGBBAA) qu'ecrit Coloriser-STL (confirme necessaire pour
+# les fichiers issus de Meshy, voir son propre commentaire "RGBA 8 chiffres (#RRGGBBFF)"). Au lieu
+# de rejeter ce format ou de le lire correctement, il garde SILENCIEUSEMENT les 6 DERNIERS
+# caracteres comme RRGGBB et ignore les 2 premiers : "#FF5733FF" (cense etre R=FF, G=57, B=33,
+# A=FF) devient R=87, G=51, B=255 - teste et confirme directement dans ce conteneur. Le "FF"
+# d'opacite (TOUJOURS present, Coloriser-STL n'ecrit que de l'opacite pleine) est ainsi lu comme le
+# canal BLEU, d'ou le bleu/violet dominant et systematique sur TOUS les fichiers, quelle que soit
+# la vraie couleur peinte dessus. Important : le CALCUL du dosage (Obtenir-RGBDepuisHex ci-dessus)
+# n'a jamais ete touche par ce bug - il lit deja les 6 premiers caracteres POSITIONNELLEMENT,
+# ignorant naturellement un eventuel octet alpha final. Seul l'AFFICHAGE (apercu, pastilles de
+# couleur) passait par [ColorTranslator]::FromHtml, a une bonne quinzaine d'endroits differents
+# dans ce fichier. Remplace partout [ColorTranslator]::FromHtml($hex) par
+# Convertir-HexEnCouleurGdi $hex, qui applique le meme parsing positionnel correct que
+# Obtenir-RGBDepuisHex plutot que de se fier a un ColorTranslator qui ne gere pas ce format.
+function Convertir-HexEnCouleurGdi([string]$hex) {
+    if ([string]::IsNullOrEmpty($hex)) { return [System.Drawing.Color]::Empty }
+    $h = $hex.TrimStart('#')
+    if ($h.Length -ge 6) {
+        $r = [Convert]::ToInt32($h.Substring(0, 2), 16)
+        $g = [Convert]::ToInt32($h.Substring(2, 2), 16)
+        $b = [Convert]::ToInt32($h.Substring(4, 2), 16)
+        return [System.Drawing.Color]::FromArgb($r, $g, $b)
+    }
+    # Formats courts (#RGB...) : pas concernes par le bug du format 8 chiffres, ColorTranslator les
+    # gere correctement - et c'est lui qui definit "invalide" pour tout le reste (meme comportement
+    # d'exception qu'avant pour les appelants avec un try/catch autour).
+    return [System.Drawing.ColorTranslator]::FromHtml($hex)
 }
 
 # 17/10/2026, Tomyn (apres le passage au modele de melange "pigments" ci-dessous) : "le marron est
@@ -1496,7 +1527,7 @@ function Mettre-A-Jour-ApercuTrioSelectionne {
 
     for ($i = 0; $i -lt 3; $i++) {
         try {
-            $panneauxPastilles[$i].BackColor = [System.Drawing.ColorTranslator]::FromHtml($trioSelectionne[$i].Hex)
+            $panneauxPastilles[$i].BackColor = Convertir-HexEnCouleurGdi($trioSelectionne[$i].Hex)
         } catch {
             $panneauxPastilles[$i].BackColor = [System.Drawing.Color]::Gray
         }
@@ -1615,12 +1646,12 @@ function Afficher-EditeurTrio($nomExistant, $composantsExistants) {
         $boutonCouleur.Tag = $hexDepart
         $boutonCouleur.Text = $hexDepart
         try {
-            $boutonCouleur.BackColor = [System.Drawing.ColorTranslator]::FromHtml($hexDepart)
+            $boutonCouleur.BackColor = Convertir-HexEnCouleurGdi($hexDepart)
             $boutonCouleur.ForeColor = if (([int]$boutonCouleur.BackColor.R + [int]$boutonCouleur.BackColor.G + [int]$boutonCouleur.BackColor.B) -lt 380) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
         } catch { }
         $boutonCouleur.Add_Click({
             $dialogueCouleur = New-Object System.Windows.Forms.ColorDialog
-            try { $dialogueCouleur.Color = [System.Drawing.ColorTranslator]::FromHtml($boutonCouleur.Tag) } catch { }
+            try { $dialogueCouleur.Color = Convertir-HexEnCouleurGdi($boutonCouleur.Tag) } catch { }
             if ($dialogueCouleur.ShowDialog($popup) -eq [System.Windows.Forms.DialogResult]::OK) {
                 $c = $dialogueCouleur.Color
                 $hexChoisi = "#{0:X2}{1:X2}{2:X2}" -f $c.R, $c.G, $c.B
@@ -1646,7 +1677,7 @@ function Afficher-EditeurTrio($nomExistant, $composantsExistants) {
             for ($k = 0; $k -lt 3; $k++) {
                 $hexActuel = $zonesHex[$k].Text.Trim()
                 if (-not $hexActuel.StartsWith('#')) { $hexActuel = '#' + $hexActuel }
-                try { [void][System.Drawing.ColorTranslator]::FromHtml($hexActuel) } catch { $hexActuel = $boutonsCouleur[$k].Tag }
+                try { [void](Convertir-HexEnCouleurGdi($hexActuel)) } catch { $hexActuel = $boutonsCouleur[$k].Tag }
                 $composantsActuels += @{ Nom = $zonesNomComposant[$k].Text; Hex = $hexActuel }
             }
             $popup.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -1655,7 +1686,7 @@ function Afficher-EditeurTrio($nomExistant, $composantsExistants) {
             } finally {
                 $popup.Cursor = [System.Windows.Forms.Cursors]::Default
             }
-            $c = [System.Drawing.ColorTranslator]::FromHtml($hexSuggere)
+            $c = Convertir-HexEnCouleurGdi($hexSuggere)
             $boutonCouleur.Tag = $hexSuggere
             $boutonCouleur.Text = $hexSuggere
             $boutonCouleur.BackColor = $c
@@ -1685,10 +1716,10 @@ function Afficher-EditeurTrio($nomExistant, $composantsExistants) {
             if ([string]::IsNullOrWhiteSpace($texteHex)) { return }
             if (-not $texteHex.StartsWith('#')) { $texteHex = '#' + $texteHex }
             try {
-                # [System.Drawing.ColorTranslator]::FromHtml("") renvoie Color.Empty (donc du noir)
+                # Convertir-HexEnCouleurGdi("") renvoie Color.Empty (donc du noir)
                 # SANS lever d'exception - d'ou le IsNullOrWhiteSpace juste au-dessus, sinon un champ
                 # vide serait silencieusement accepte comme "#000000".
-                $c = [System.Drawing.ColorTranslator]::FromHtml($texteHex)
+                $c = Convertir-HexEnCouleurGdi($texteHex)
                 $hexNormalise = "#{0:X2}{1:X2}{2:X2}" -f $c.R, $c.G, $c.B
                 $zoneHex.Text = $hexNormalise
                 $boutonCouleur.Tag = $hexNormalise
@@ -1756,7 +1787,7 @@ function Afficher-EditeurTrio($nomExistant, $composantsExistants) {
             # renvoie Color.Empty, donc du noir) - le IsNullOrWhiteSpace evite d'accepter un champ
             # vide comme "#000000" valide.
             if (-not [string]::IsNullOrWhiteSpace($zonesHex[$i].Text)) {
-                try { $c = [System.Drawing.ColorTranslator]::FromHtml($texteHex) } catch { $c = $null }
+                try { $c = Convertir-HexEnCouleurGdi($texteHex) } catch { $c = $null }
             }
             if ($null -eq $c) {
                 $uneErreurHex = $true
@@ -2239,12 +2270,12 @@ function Afficher-EditeurCouleur([string]$nomExistant, [string]$hexExistant) {
     $boutonCouleur.Tag = $hexDepart
     $boutonCouleur.Text = $hexDepart
     try {
-        $boutonCouleur.BackColor = [System.Drawing.ColorTranslator]::FromHtml($hexDepart)
+        $boutonCouleur.BackColor = Convertir-HexEnCouleurGdi($hexDepart)
         $boutonCouleur.ForeColor = if (([int]$boutonCouleur.BackColor.R + [int]$boutonCouleur.BackColor.G + [int]$boutonCouleur.BackColor.B) -lt 380) { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
     } catch { }
     $boutonCouleur.Add_Click({
         $dialogueCouleur = New-Object System.Windows.Forms.ColorDialog
-        try { $dialogueCouleur.Color = [System.Drawing.ColorTranslator]::FromHtml($boutonCouleur.Tag) } catch { }
+        try { $dialogueCouleur.Color = Convertir-HexEnCouleurGdi($boutonCouleur.Tag) } catch { }
         if ($dialogueCouleur.ShowDialog($popup) -eq [System.Windows.Forms.DialogResult]::OK) {
             $c = $dialogueCouleur.Color
             $hexChoisi = "#{0:X2}{1:X2}{2:X2}" -f $c.R, $c.G, $c.B
@@ -2262,7 +2293,7 @@ function Afficher-EditeurCouleur([string]$nomExistant, [string]$hexExistant) {
         if ([string]::IsNullOrWhiteSpace($texteHex)) { return }
         if (-not $texteHex.StartsWith('#')) { $texteHex = '#' + $texteHex }
         try {
-            $c = [System.Drawing.ColorTranslator]::FromHtml($texteHex)
+            $c = Convertir-HexEnCouleurGdi($texteHex)
             $hexNormalise = "#{0:X2}{1:X2}{2:X2}" -f $c.R, $c.G, $c.B
             $zoneHex.Text = $hexNormalise
             $boutonCouleur.Tag = $hexNormalise
@@ -2302,7 +2333,7 @@ function Afficher-EditeurCouleur([string]$nomExistant, [string]$hexExistant) {
         if (-not $texteHex.StartsWith('#')) { $texteHex = '#' + $texteHex }
         $c = $null
         if (-not [string]::IsNullOrWhiteSpace($zoneHex.Text)) {
-            try { $c = [System.Drawing.ColorTranslator]::FromHtml($texteHex) } catch { $c = $null }
+            try { $c = Convertir-HexEnCouleurGdi($texteHex) } catch { $c = $null }
         }
         if ($null -eq $c) {
             Afficher-Boite "Code couleur invalide : '$($zoneHex.Text)'.`r`n`r`nFormat attendu : #RRGGBB (ex: #FF8800) ou RRGGBB sans le #." "Code hex invalide" "OK" "Warning" | Out-Null
@@ -3026,7 +3057,7 @@ function Afficher-SuggestionTriosDepuisCouleurs {
             if ($indicesValides.Count -eq 1) {
                 $combo = $meilleures[$indicesValides[0]]
                 for ($p = 0; $p -lt 3; $p++) {
-                    try { $pastillesPreview[$p].BackColor = [System.Drawing.ColorTranslator]::FromHtml($combo.Composants[$p].Hex) } catch { }
+                    try { $pastillesPreview[$p].BackColor = Convertir-HexEnCouleurGdi($combo.Composants[$p].Hex) } catch { }
                 }
             } else {
                 foreach ($pas in $pastillesPreview) { $pas.BackColor = $THEME.Surface }
@@ -3765,7 +3796,7 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
         $hexCouleur = $couleurs[$i]
         if (-not $cacheCouleurBase.ContainsKey($hexCouleur)) {
             try {
-                $cacheCouleurBase[$hexCouleur] = [System.Drawing.ColorTranslator]::FromHtml($hexCouleur)
+                $cacheCouleurBase[$hexCouleur] = Convertir-HexEnCouleurGdi($hexCouleur)
             } catch {
                 $cacheCouleurBase[$hexCouleur] = [System.Drawing.Color]::Gray
             }
@@ -5171,7 +5202,7 @@ function Afficher-SuggestionsTriosDiversifiees([string]$chemin3mf, [array]$sugge
             $pastille.Location = New-Object System.Drawing.Point($xPastille, ($yLigne + 24))
             $pastille.Size = New-Object System.Drawing.Size(16, 16)
             $pastille.BorderStyle = "FixedSingle"
-            try { $pastille.BackColor = [System.Drawing.ColorTranslator]::FromHtml($composant.Hex) } catch { }
+            try { $pastille.BackColor = Convertir-HexEnCouleurGdi($composant.Hex) } catch { }
             $popup.Controls.Add($pastille)
             $xPastille += 20
         }
@@ -6142,7 +6173,7 @@ $form.Controls.Add($txtJournal)
 function Ecrire-Journal([string]$texte, [string]$hexCouleur = "") {
     if (-not [string]::IsNullOrWhiteSpace($hexCouleur)) {
         try {
-            $couleurPastille = [System.Drawing.ColorTranslator]::FromHtml($hexCouleur)
+            $couleurPastille = Convertir-HexEnCouleurGdi($hexCouleur)
             $debutPastille = $txtJournal.TextLength
             $txtJournal.AppendText([char]0x25A0 + " ")
             $txtJournal.Select($debutPastille, 2)
@@ -6693,6 +6724,7 @@ function Mettre-A-Jour-Apercu([System.Windows.Forms.PictureBox]$pictureBox, [str
     }
 
     $corpsFonctions = @(
+        "function Convertir-HexEnCouleurGdi { " + (${function:Convertir-HexEnCouleurGdi}.ToString()) + " }",
         "function Decoder-EtatPaintColor { " + (${function:Decoder-EtatPaintColor}.ToString()) + " }",
         "function Lire-TrianglesPourApercu { " + (${function:Lire-TrianglesPourApercu}.ToString()) + " }",
         "function Choisir-MeilleurAngleVue { " + (${function:Choisir-MeilleurAngleVue}.ToString()) + " }",
@@ -6887,7 +6919,10 @@ function Redessiner-Apercu-AvecRotation([System.Windows.Forms.PictureBox]$pictur
     $largeurRotation = [Math]::Max(60, [Math]::Floor($largeurApercu / 2))
     $hauteurRotation = [Math]::Max(52, [Math]::Floor($hauteurApercu / 2))
 
-    $corpsFonctions = "function Nouvelle-ImageApercu { " + (${function:Nouvelle-ImageApercu}.ToString()) + " }"
+    $corpsFonctions = @(
+        "function Convertir-HexEnCouleurGdi { " + (${function:Convertir-HexEnCouleurGdi}.ToString()) + " }",
+        "function Nouvelle-ImageApercu { " + (${function:Nouvelle-ImageApercu}.ToString()) + " }"
+    ) -join "`r`n"
     $script = @"
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 $corpsFonctions
@@ -7012,7 +7047,10 @@ function Afficher-SelecteurVignettes([System.Windows.Forms.PictureBox]$pictureBo
     $largeurVignette = 220
     $hauteurVignette = 190
 
-    $corpsFonctions = "function Nouvelle-ImageApercu { " + (${function:Nouvelle-ImageApercu}.ToString()) + " }"
+    $corpsFonctions = @(
+        "function Convertir-HexEnCouleurGdi { " + (${function:Convertir-HexEnCouleurGdi}.ToString()) + " }",
+        "function Nouvelle-ImageApercu { " + (${function:Nouvelle-ImageApercu}.ToString()) + " }"
+    ) -join "`r`n"
     $script = @"
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 $corpsFonctions

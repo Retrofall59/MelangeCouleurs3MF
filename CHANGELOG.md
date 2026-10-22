@@ -7,6 +7,40 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : couleur violette systématique sur l'aperçu "avant", 22/10/2026, soir
+
+Tomyn : "les couleurs de la previews avant ne s'occupe pas du tout les couleurs [...] j'ai beau
+prendre n'importe quel fichier il est toujours avec ce violet [...] il ne prend pas les couleurs
+du fichier d'origine". Confirmé que Bambu Studio affiche les bonnes couleurs sur le même fichier -
+donc pas un problème de données, un problème de lecture côté Mélangeur.
+
+Cause trouvée et confirmée par test direct (pas une hypothèse) : `[System.Drawing.ColorTranslator]
+::FromHtml()` ne gère PAS les hex 8 chiffres `#RRGGBBAA`. Test exécuté dans cette session :
+`FromHtml("#FF5733FF")` renvoie R=87 G=51 B=255 au lieu de R=255 G=87 B=51 - il ignore les 2
+premiers caractères et relit les 6 derniers comme RRGGBB, donc le "FF" d'opacité en fin de chaîne
+devient le canal BLEU. Coloriser-STL (l'outil qui écrit ces .3mf) ajoute systématiquement "FF"
+(opacité pleine) en suffixe 8 chiffres sur chaque `filament_colour` - confirmé en lisant son code
+source. Résultat : bleu/violet forcé au maximum sur absolument toutes les couleurs de tous les
+fichiers, peu importe le fichier - exactement le symptôme décrit.
+
+Important : ce bug touche uniquement les chemins d'AFFICHAGE (aperçu 3D, pastilles de couleur,
+sélecteurs, dialogues couleur - 17 endroits au total dans ce fichier). Le calcul du dosage/mélange
+lui-même (`Obtenir-RGBDepuisHex`) utilise un découpage de sous-chaînes différent, déjà correct, et
+n'a jamais été affecté : les proportions de mélange calculées étaient toujours bonnes, seul
+l'affichage était faux.
+
+Fix : nouvelle fonction `Convertir-HexEnCouleurGdi` qui découpe R/G/B manuellement par position
+(comme `Obtenir-RGBDepuisHex`) au lieu de passer par `ColorTranslator.FromHtml`, et ignore tout
+ce qui suit les 6 premiers chiffres hex. Remplace les 17 appels `ColorTranslator::FromHtml` du
+fichier. Injectée dans les 3 Runspaces d'arrière-plan qui en ont besoin (génération d'aperçu et
+de vignettes tournent dans des Runspaces séparés qui ne connaissent aucune fonction du script
+principal sauf celles explicitement injectées).
+
+Sans rapport avec la saga flou/escalier/nuage de points (grain, anti-aliasing, carrés) traitée
+juste avant - bug totalement différent, sur un chemin de code différent.
+
+---
+
 ## Ajout : barre de progression sur les aperçus, 22/10/2026, soir
 
 Tomyn : "il faudrait une barre de progression de génération previews pour que l'utilisateur lambda
