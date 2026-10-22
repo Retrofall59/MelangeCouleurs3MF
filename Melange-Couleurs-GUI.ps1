@@ -6823,14 +6823,13 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
-        $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
-        $overlayApercu.Location = $pointEcran
         $overlayApercu.Show()
-        $overlayApercu.BringToFront()
         # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
         # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
         # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
         $pictureBox.Focus()
+        # Position volontairement PAS calculee ici (voir la note dans le Add_Tick plus bas) -
+        # recalculee a CHAQUE tick a la place.
     }
 
     $resultatAsync = $ps.BeginInvoke()
@@ -6839,6 +6838,22 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
+            # 23/10/2026, Tomyn : "barre toujours non visible" meme en fenetre TopMost separee -
+            # cause trouvee : pour le chargement automatique au demarrage (la seule situation que
+            # Tomyn semble avoir testee jusqu'ici, fichier rouvert tout seul a l'ouverture), CETTE
+            # fonction est appelee AVANT que $form.ShowDialog() ne s'execute (et avant
+            # $form.WindowState = "Maximized" juste avant) - a ce moment-la, PointToScreen() sur la
+            # PictureBox renvoyait une position calculee sur la fenetre PAS ENCORE affichee/maximisee
+            # (position d'avant-affichage, qui ne correspond a rien une fois la fenetre reellement
+            # montree et agrandie) : la barre se dessinait bel et bien, juste au mauvais endroit de
+            # l'ecran, invisible pour Tomyn. Recalculer la position ICI, a CHAQUE tick (donc apres
+            # que le premier tick arrive, le formulaire principal est deja affiche et maximise dans
+            # tous les cas, l'auto-chargement comme un chargement manuel) corrige les deux situations
+            # sans distinction de cas particulier, et gere en prime un deplacement de la fenetre
+            # principale pendant un calcul (bonus, pas la cause initiale).
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+            if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
+            $overlayApercu.BringToFront()
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
@@ -6996,14 +7011,14 @@ $corpsFonctions
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
-        $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
-        $overlayApercu.Location = $pointEcran
         $overlayApercu.Show()
-        $overlayApercu.BringToFront()
         # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
         # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
         # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
         $pictureBox.Focus()
+        # Position recalculee a CHAQUE tick, pas ici (voir la note dans Mettre-A-Jour-Apercu pour
+        # le pourquoi : le formulaire principal peut ne pas encore etre affiche/maximise au moment
+        # de cet appel).
     }
 
     $resultatAsync = $ps.BeginInvoke()
@@ -7012,6 +7027,9 @@ $corpsFonctions
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+            if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
+            $overlayApercu.BringToFront()
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {

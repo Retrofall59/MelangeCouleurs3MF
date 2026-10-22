@@ -7,6 +7,31 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : vraie cause de la barre de progression invisible trouvée, 23/10/2026
+
+Tomyn : "barre toujours non visible" même avec la fenêtre TopMost séparée (recette du mélange).
+Cause trouvée cette fois, précise : pour le chargement automatique au démarrage (le seul cas que
+Tomyn semble avoir testé — fichier rouvert tout seul à l'ouverture, "Rotation : -- / Inclinaison :
+--" sur sa capture d'écran), `Mettre-A-Jour-Apercu` est appelée dans le script AVANT
+`$form.ShowDialog()` et avant `$form.WindowState = "Maximized"`, qui n'arrivent que quelques
+lignes plus loin. À ce moment précis, `PointToScreen()` sur la PictureBox renvoyait une position
+calculée sur la fenêtre PAS ENCORE affichée/agrandie — une position qui ne correspond à rien une
+fois la fenêtre réellement montrée et maximisée. La barre se dessinait bel et bien, juste au
+mauvais endroit de l'écran : invisible pour Tomyn, mais pas pour une raison de z-order ou de type
+de contrôle cette fois (les deux fausses pistes précédentes).
+
+Fix : la position n'est plus calculée une seule fois au lancement du calcul, mais RECALCULÉE À
+CHAQUE TICK du minuteur d'animation (toutes les 200ms). Au moment où le premier tick arrive, le
+formulaire principal est de toute façon déjà affiché et maximisé, qu'il s'agisse du chargement
+automatique ou d'un chargement manuel - corrige les deux cas sans distinction, et gère en prime un
+déplacement de la fenêtre principale pendant un calcul.
+
+Non vérifiable visuellement ici (GDI+ indisponible sous Linux) — mais cette fois le raisonnement
+tient sur une cause concrète et vérifiable dans le code (ordre d'exécution des lignes), pas une
+simple hypothèse de rendu.
+
+---
+
 ## Fix (non vérifié visuellement) : barre de progression toujours invisible + flou persistant, 22/10/2026, soir
 
 Tomyn, après le repositionnement de la barre et l'agrandissement orienté des triangles sous-pixel :
