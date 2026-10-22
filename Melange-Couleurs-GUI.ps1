@@ -6840,7 +6840,19 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # separee, pas un enfant du formulaire). Affichee des le lancement du calcul en arriere-plan,
     # animee en va-et-vient a chaque tick (pas de vraie progression chiffree disponible depuis le
     # runspace, voir le commentaire plus haut), masquee dans le "finally" ci-dessous, succes ou echec.
-    $directionBarre = 1
+    # 23/10/2026, Tomyn (avec capture d'ecran) : "toujours aussi moche se rempli en quelques seconde
+    # et stagne" - confirme par un test PowerShell direct (pas une hypothese) : une variable scalaire
+    # simple ($directionBarre = 1 puis reassignee a l'interieur du Add_Tick) NE PERSISTE PAS ses
+    # reassignations d'un tic a l'autre a travers .GetNewClosure() - chaque appel du scriptblock cree
+    # sa PROPRE copie locale au lieu d'ecrire dans la portee capturee (meme famille de piege que le
+    # bug $script: documente plus haut dans ce fichier pres de "PAS de .GetNewClosure() ici", juste
+    # sur une variable locale cette fois). Resultat : $directionBarre revient TOUJOURS a 1 au tic
+    # suivant, la barre avance vers la droite, se cogne contre le bord, le "-1" assigne est jete, et
+    # au tic d'apres elle recalcule exactement la MEME position butee contre le bord - d'ou le blocage
+    # visuel exact observe sur la capture (bloc colle a droite, immobile). Teste et confirme qu'un
+    # tableau a 1 element (type reference, dont on mute l'ELEMENT au lieu de reassigner la variable
+    # elle-meme) survit correctement a travers les tics, contrairement au scalaire.
+    $directionBarre = @(1)
     $overlayApercu = $etatPartage["__ProgressOverlay_${cle}__"]
     $pisteApercu = $etatPartage["__ProgressPiste_${cle}__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_${cle}__"]
@@ -6886,14 +6898,16 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             $overlayApercu.BringToFront()
             # Va-et-vient simple dans la piste (comme l'ancien Panel), borne a la largeur de
             # $pisteApercu (pas $overlayApercu : la carte a des marges autour de la piste desormais).
-            $pas = 10 * $directionBarre
+            # $directionBarre est un tableau a 1 element (voir le commentaire plus haut) : on mute
+            # $directionBarre[0], jamais $directionBarre lui-meme.
+            $pas = 10 * $directionBarre[0]
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
                 $nouveauLeft = 0
-                $directionBarre = 1
+                $directionBarre[0] = 1
             } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
                 $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
-                $directionBarre = -1
+                $directionBarre[0] = -1
             }
             $remplissageApercu.Left = $nouveauLeft
         }
@@ -7032,7 +7046,10 @@ $corpsFonctions
     # Meme carte-overlay que Mettre-A-Jour-Apercu (voir Creer-CarteProgressionApercu et son
     # commentaire) - la rotation interactive est plus courte (resolution reduite juste au-dessus)
     # mais reste perceptible, vaut la peine d'etre montree ici aussi.
-    $directionBarre = 1
+    # 23/10/2026 : $directionBarre en tableau a 1 element, pas scalaire - voir le commentaire detaille
+    # dans Mettre-A-Jour-Apercu (bug confirme par test direct : une reassignation scalaire a
+    # l'interieur d'un Add_Tick GetNewClosure() ne survit pas d'un tic a l'autre).
+    $directionBarre = @(1)
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_${cle}__"]
     $pisteApercu = $script:ApercuEtat["__ProgressPiste_${cle}__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_${cle}__"]
@@ -7059,14 +7076,14 @@ $corpsFonctions
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            $pas = 10 * $directionBarre
+            $pas = 10 * $directionBarre[0]
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
                 $nouveauLeft = 0
-                $directionBarre = 1
+                $directionBarre[0] = 1
             } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
                 $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
-                $directionBarre = -1
+                $directionBarre[0] = -1
             }
             $remplissageApercu.Left = $nouveauLeft
         }

@@ -7,6 +7,38 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix (confirmé par test direct) : vrai bug de fond du va-et-vient - scalaire qui ne survit pas à travers Add_Tick/GetNewClosure, 23/10/2026
+
+Tomyn, capture d'écran à l'appui : "toujours aussi moche se rempli en quelques seconde et stagne" -
+le bloc orange est bien flush contre le bord droit de la piste, immobile, pendant que le titre
+affiche toujours "Chargement de l'aperçu...".
+
+Cette fois testé DIRECTEMENT en PowerShell (pas une hypothèse de plus) : un scriptblock
+`.GetNewClosure()` invoqué plusieurs fois de suite (comme le fait `Add_Tick` à chaque tic du
+`Timer`) NE PERSISTE PAS les réassignations faites à une variable scalaire simple à l'intérieur
+de son propre corps - chaque appel repart de la valeur capturée à l'origine, la réassignation est
+jetée à la fin de l'appel. Confirmé par un test minimal : une boucle de 60 appels avec
+`$left = $left + 10` reste bloquée à `10` pour toujours, au lieu d'accumuler. Exactement la même
+famille de piège que le bug `$script:` déjà documenté plus haut dans ce fichier (section "PAS de
+`.GetNewClosure()` ici"), sauf que celui-ci touche une variable locale, pas une variable de script.
+
+C'est très exactement ce qui causait le blocage : `$directionBarre` (scalaire, réassigné à `1` ou
+`-1` à l'intérieur du `Add_Tick`) revenait TOUJOURS à sa valeur capturée (`1`) au tic suivant. La
+barre avance donc toujours vers la droite, se cogne contre le bord, le `-1` est jeté, et au tic
+d'après elle recalcule exactement la même position butée contre le bord - immobile pour de bon,
+pas juste "moche". C'est aussi, très probablement, la vraie explication du tout premier signalement
+("se fini tres vite") que j'avais mal diagnostiqué comme un problème purement esthétique : la barre
+ne finissait pas sa course vite, elle restait bloquée après une seule course.
+
+Un tableau à 1 élément (type référence - on mute l'ÉLÉMENT, jamais la variable elle-même) confirmé
+par le même test comme survivant correctement à travers les tics. `$directionBarre = @(1)`, lu/écrit
+partout via `$directionBarre[0]`, dans les deux fonctions (`Mettre-A-Jour-Apercu` et
+`Redessiner-Apercu-AvecRotation`). `$remplissageApercu.Left` n'avait pas ce problème : c'est une
+PROPRIÉTÉ d'un vrai contrôle WinForms (objet, pas scalaire), qui se lit/écrit correctement sur
+l'objet réel à chaque tic.
+
+---
+
 ## Fix : la barre de progression preview reprend la vraie carte de $overlayProgression, 23/10/2026
 
 Tomyn, après le passage au `ProgressBar` natif en `Style="Marquee"` de l'entrée précédente :
