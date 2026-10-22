@@ -7,6 +7,38 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix (non vérifié visuellement) : barre de progression toujours invisible + flou persistant, 22/10/2026, soir
+
+Tomyn, après le repositionnement de la barre et l'agrandissement orienté des triangles sous-pixel :
+"barre de progression non visible [...] pourquoi tu fais pas cette barre comme la barre de
+progression de quand on lance le mélange" + "c'est toujours aussi flou". Les deux essais précédents
+sur ces deux points n'ont rien changé.
+
+**Barre de progression** : suivant directement la remarque de Tomyn, abandon du Panel enfant du
+formulaire principal (sa visibilité dépendait d'un empilement avec la PictureBox jamais vérifiable
+ici, deux tentatives infructueuses). Reprise à l'identique de la recette de `$overlayProgression`
+(la fenêtre affichée au lancement du mélange, déjà fiable en production) : une fenêtre Windows
+TopMost séparée (`FormBorderStyle=None`), positionnée au moment de l'affichage juste sous la
+PictureBox via `PointToScreen` (coordonnées écran, pas coordonnées du formulaire). Comme `.Show()`
+active/donne le focus à cette nouvelle fenêtre par défaut, un `$pictureBox.Focus()` juste après la
+rend immédiatement au PictureBox pour ne pas casser les raccourcis clavier (flèches de rotation).
+
+**Flou** : 3 tentatives sur la FORME des triangles sous-pixel (carré, vraie géométrie, vraie
+géométrie agrandie) sans amélioration perçue — piste différente, indépendante de cette forme :
+l'aperçu était jusqu'ici calculé À LA TAILLE EXACTE d'affichage (300x260) puis montré 1 pour 1.
+Calculé désormais à une résolution interne 2x plus grande dans chaque dimension (600x520), avec la
+PictureBox (déjà en mode "Zoom") inchangée à l'affichage : elle réduit donc l'image avec
+interpolation, un sur-échantillonnage classique qui lisse les bords indépendamment de la forme des
+triangles sous-pixel — et qui, en prime, fait grimper la surface écran de beaucoup de ces triangles
+au-dessus du seuil de 4 px² déjà en place, donc moins souvent approximés du tout. Appliqué
+seulement au chargement initial/complet (`Mettre-A-Jour-Apercu`), pas à la rotation manuelle
+(`Redessiner-Apercu-AvecRotation`, déjà réduite à moitié résolution pour rester réactive au clic).
+
+**Important : non vérifiable visuellement dans cet environnement** (GDI+/System.Drawing
+indisponible sous Linux) — à tester réellement.
+
+---
+
 ## Fix (non vérifié visuellement) : escalier + flou toujours présents en même temps, 22/10/2026, soir
 
 Tomyn, après le fix couleur : flou ET escalier toujours là ensemble sur l'aperçu. Diagnostic : les

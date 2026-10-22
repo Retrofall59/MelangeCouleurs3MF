@@ -6564,35 +6564,32 @@ Ajouter-ZoomApercu $pictureAvant "avant"
 # couramment 20-60s sur un gros maillage (voir les chronometrages dans le journal), et rien
 # jusqu'ici ne le montrait a l'ecran (seul le journal en bas, facile a ne pas remarquer). Pas de
 # vraie progression chiffree possible ici (le calcul en arriere-plan, dans Nouvelle-ImageApercu, ne
-# remonte aucun avancement intermediaire au thread principal pendant qu'il tourne) - une fine
-# bande "indeterminee" (va-et-vient, meme principe visuel que la barre de l'ecran de lancement plus
-# haut : piste violette sombre + remplissage orange) superposee au bas de la case d'apercu suffit a
-# montrer "ca travaille", sans faire croire a une estimation precise qu'on n'a pas. Affichee/animee/
-# masquee par Mettre-A-Jour-Apercu et Redessiner-Apercu-AvecRotation, qui retrouvent ces controles
-# via $script:ApercuEtat["__ProgressPiste_<cle>__"]/["__ProgressRemplissage_<cle>__"], meme
-# principe que $labelAngle juste au-dessus.
-# 22/10/2026, soir, Tomyn : "rien n'apparait du tout" - la bande chevauchait jusqu'ici les 5
-# derniers pixels DU BAS DE LA PICTUREBOX elle-meme (meme rectangle), ce qui la rend dependante de
-# l'ordre d'empilement (z-order) entre deux controles freres - un empilement que je ne peux pas
-# verifier visuellement ici (System.Drawing/WinForms ne tourne pas sous Linux, impossible de
-# capturer un rendu reel pour confirmer avant d'envoyer). Repositionnee desormais ENTIEREMENT SOUS
-# la PictureBox, dans l'interstice de 4 px deja existant avant le label d'angle (hauteur 3 px, ne
-# touche jamais le rectangle de la PictureBox) : aucun chevauchement possible, donc aucune
-# dependance a un empilement non verifiable.
-$pisteApercuAvant = New-Object System.Windows.Forms.Panel
-$pisteApercuAvant.Location = New-Object System.Drawing.Point($xApercu, ($yPictureAvant + $hauteurApercu + 1))
-$pisteApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 3)
-$pisteApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-$pisteApercuAvant.Anchor = "Top, Right"
-$pisteApercuAvant.Visible = $false
-$form.Controls.Add($pisteApercuAvant)
-$pisteApercuAvant.BringToFront()
+# remonte aucun avancement intermediaire au thread principal pendant qu'il tourne) - une fine bande
+# "indeterminee" (va-et-vient) suffit a montrer "ca travaille".
+# 22/10/2026, soir, Tomyn : "rien n'apparait du tout" avec un Panel enfant du formulaire principal
+# (chevauchait le bas de la PictureBox, z-order entre controles freres jamais verifiable ici) PUIS
+# avec le meme Panel repositionne sous la PictureBox (toujours rien) - Tomyn : "pourquoi tu fais pas
+# cette barre comme celle du lancement du melange" ($overlayProgression plus haut dans ce fichier,
+# DEJA PROUVEE fiable en production). Repris ICI A L'IDENTIQUE : une fenetre TopMost separee
+# (FormBorderStyle=None, ShowInTaskbar=false, StartPosition=Manual), pas un Panel enfant - plus
+# aucune question d'empilement avec quoi que ce soit, elle flotte au-dessus de tout. Positionnee au
+# moment de l'affichage juste sous la PictureBox via PointToScreen (coordonnees ECRAN, pas
+# coordonnees du formulaire). Affichee/animee/masquee par Mettre-A-Jour-Apercu et
+# Redessiner-Apercu-AvecRotation, qui retrouvent ces controles via
+# $script:ApercuEtat["__ProgressOverlay_<cle>__"]/["__ProgressRemplissage_<cle>__"].
+$overlayApercuAvant = New-Object System.Windows.Forms.Form
+$overlayApercuAvant.FormBorderStyle = "None"
+$overlayApercuAvant.ShowInTaskbar = $false
+$overlayApercuAvant.TopMost = $true
+$overlayApercuAvant.StartPosition = "Manual"
+$overlayApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
+$overlayApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $remplissageApercuAvant = New-Object System.Windows.Forms.Panel
 $remplissageApercuAvant.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 3)
+$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 6)
 $remplissageApercuAvant.BackColor = $THEME.AccentChaud
-$pisteApercuAvant.Controls.Add($remplissageApercuAvant)
-$script:ApercuEtat["__ProgressPiste_avant__"] = $pisteApercuAvant
+$overlayApercuAvant.Controls.Add($remplissageApercuAvant)
+$script:ApercuEtat["__ProgressOverlay_avant__"] = $overlayApercuAvant
 $script:ApercuEtat["__ProgressRemplissage_avant__"] = $remplissageApercuAvant
 
 # Affiche l'angle actuellement applique (10/10/2026, Tomyn : "go les amelio") - evite d'avoir a
@@ -6645,21 +6642,21 @@ Ajouter-MenuContextuelApercu $pictureApres "apres"
 Ajouter-RaccourcisClavierApercu $pictureApres "apres"
 Ajouter-ZoomApercu $pictureApres "apres"
 
-# Meme bande de progression que $pisteApercuAvant plus haut (voir son commentaire pour le detail).
-$pisteApercuApres = New-Object System.Windows.Forms.Panel
-$pisteApercuApres.Location = New-Object System.Drawing.Point($xApercu, ($yPictureApres + $hauteurApercu + 1))
-$pisteApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 3)
-$pisteApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-$pisteApercuApres.Anchor = "Top, Right"
-$pisteApercuApres.Visible = $false
-$form.Controls.Add($pisteApercuApres)
-$pisteApercuApres.BringToFront()
+# Meme fenetre-overlay TopMost que $overlayApercuAvant plus haut (voir son commentaire pour le
+# detail - meme recette que $overlayProgression, deja prouvee fiable en production).
+$overlayApercuApres = New-Object System.Windows.Forms.Form
+$overlayApercuApres.FormBorderStyle = "None"
+$overlayApercuApres.ShowInTaskbar = $false
+$overlayApercuApres.TopMost = $true
+$overlayApercuApres.StartPosition = "Manual"
+$overlayApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
+$overlayApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $remplissageApercuApres = New-Object System.Windows.Forms.Panel
 $remplissageApercuApres.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 3)
+$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 6)
 $remplissageApercuApres.BackColor = $THEME.AccentChaud
-$pisteApercuApres.Controls.Add($remplissageApercuApres)
-$script:ApercuEtat["__ProgressPiste_apres__"] = $pisteApercuApres
+$overlayApercuApres.Controls.Add($remplissageApercuApres)
+$script:ApercuEtat["__ProgressOverlay_apres__"] = $overlayApercuApres
 $script:ApercuEtat["__ProgressRemplissage_apres__"] = $remplissageApercuApres
 
 $labelAngleApres = New-Object System.Windows.Forms.Label
@@ -6784,8 +6781,18 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $ps.Runspace = $runspace
     [void]$ps.AddScript($script)
     [void]$ps.AddArgument($chemin3mf)
-    [void]$ps.AddArgument($largeurApercu)
-    [void]$ps.AddArgument($hauteurApercu)
+    # 22/10/2026 soir, Tomyn : "toujours aussi flou" meme apres 3 essais sur la forme des triangles
+    # sous-pixel (carre, vraie geometrie, vraie geometrie agrandie) - piste independante : le bitmap
+    # est jusqu'ici calcule A LA TAILLE EXACTE d'affichage (300x260), puis affiche 1 pour 1. On le
+    # calcule desormais a une resolution INTERNE plus elevee ($FACTEUR_SURECHANTILLONNAGE fois plus
+    # grande dans chaque dimension) tout en gardant la PictureBox (SizeMode="Zoom") a sa taille
+    # d'affichage inchangee : Zoom reduit alors l'image avec interpolation, un sur-echantillonnage
+    # classique qui lisse les bords independamment de la forme utilisee pour les triangles
+    # sous-pixel (et qui, de plus, fait grimper la surface ecran de beaucoup de ces triangles
+    # au-dessus du seuil de 4 px^2 ci-dessus, donc moins souvent approximes du tout).
+    $FACTEUR_SURECHANTILLONNAGE = 2
+    [void]$ps.AddArgument($largeurApercu * $FACTEUR_SURECHANTILLONNAGE)
+    [void]$ps.AddArgument($hauteurApercu * $FACTEUR_SURECHANTILLONNAGE)
     if ($angleFichierConnu) {
         [void]$ps.AddArgument($angleFichierConnu.AngleY)
         [void]$ps.AddArgument($angleFichierConnu.AngleX)
@@ -6802,18 +6809,28 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
     # 22/10/2026, Tomyn : "barre de progression de generation previews" - voir le commentaire detaille
-    # pres de la creation de $pisteApercuAvant/$pisteApercuApres plus haut. Affichee des le lancement
-    # du calcul en arriere-plan, animee en va-et-vient a chaque tick du minuteur existant (pas besoin
-    # d'un second Timer), masquee dans le "finally" ci-dessous, succes ou echec.
+    # pres de la creation de $overlayApercuAvant/$overlayApercuApres plus haut (meme recette que
+    # $overlayProgression, deja prouvee fiable en production). Positionnee au moment de l'affichage
+    # juste sous la PictureBox (coordonnees ECRAN via PointToScreen, pas coordonnees du formulaire -
+    # c'est une fenetre separee, pas un enfant du formulaire). Affichee des le lancement du calcul
+    # en arriere-plan, animee en va-et-vient a chaque tick du minuteur existant (pas besoin d'un
+    # second Timer), masquee dans le "finally" ci-dessous, succes ou echec.
     # Direction du va-et-vient en variable LOCALE simple (capturee par la closure, comme
-    # $pisteApercu/$remplissageApercu juste en-dessous) plutot que dans $etatPartage - pas besoin du
-    # hashtable partage pour un etat qui ne sert qu'a CE minuteur.
+    # $overlayApercu/$remplissageApercu juste en-dessous) plutot que dans $etatPartage - pas besoin
+    # du hashtable partage pour un etat qui ne sert qu'a CE minuteur.
     $directionBarre = 1
-    $pisteApercu = $etatPartage["__ProgressPiste_$cle__"]
+    $overlayApercu = $etatPartage["__ProgressOverlay_$cle__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
-    if ($pisteApercu) {
+    if ($overlayApercu) {
         $remplissageApercu.Left = 0
-        $pisteApercu.Visible = $true
+        $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+        $overlayApercu.Location = $pointEcran
+        $overlayApercu.Show()
+        $overlayApercu.BringToFront()
+        # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
+        # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
+        # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
+        $pictureBox.Focus()
     }
 
     $resultatAsync = $ps.BeginInvoke()
@@ -6821,14 +6838,14 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $minuteur = New-Object System.Windows.Forms.Timer
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
-        if ($pisteApercu) {
+        if ($overlayApercu) {
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
                 $nouveauLeft = 0
                 $directionBarre = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
-                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $overlayApercu.Width) {
+                $nouveauLeft = $overlayApercu.Width - $remplissageApercu.Width
                 $directionBarre = -1
             }
             $remplissageApercu.Left = $nouveauLeft
@@ -6883,7 +6900,7 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
         } finally {
             if (-not $estPerime) { $pictureBox.Cursor = [System.Windows.Forms.Cursors]::Default }
             if ($boutonStop) { $boutonStop.Enabled = $false }
-            if ($pisteApercu) { $pisteApercu.Visible = $false }
+            if ($overlayApercu) { $overlayApercu.Hide() }
             $ps.Dispose()
             $runspace.Close()
         }
@@ -6965,20 +6982,28 @@ $corpsFonctions
     $script:ApercuEtat["__PSActif_$cle__"] = $ps
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
-    # Meme bande de progression indeterminee que Mettre-A-Jour-Apercu (voir son commentaire pour le
-    # detail) - la rotation interactive est plus courte (resolution reduite juste au-dessus) mais
-    # reste perceptible, vaut la peine d'etre montree ici aussi.
+    # Meme fenetre-overlay indeterminee que Mettre-A-Jour-Apercu (voir son commentaire pour le
+    # detail - meme recette que $overlayProgression) - la rotation interactive est plus courte
+    # (resolution reduite juste au-dessus) mais reste perceptible, vaut la peine d'etre montree ici
+    # aussi.
     # Direction du va-et-vient en variable LOCALE simple (pas dans $script:ApercuEtat) : capturee par
-    # la closure comme $pisteApercu/$remplissageApercu juste en-dessous, inutile de passer par le
+    # la closure comme $overlayApercu/$remplissageApercu juste en-dessous, inutile de passer par le
     # hashtable partage pour un etat qui ne sert qu'a CE minuteur (et qui, de toute facon, ne doit
     # jamais etre lu/ecrit via $script: a l'interieur d'une closure GetNewClosure(), voir la note plus
     # haut pres de la creation de $script:ApercuEtat).
     $directionBarre = 1
-    $pisteApercu = $script:ApercuEtat["__ProgressPiste_$cle__"]
+    $overlayApercu = $script:ApercuEtat["__ProgressOverlay_$cle__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
-    if ($pisteApercu) {
+    if ($overlayApercu) {
         $remplissageApercu.Left = 0
-        $pisteApercu.Visible = $true
+        $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+        $overlayApercu.Location = $pointEcran
+        $overlayApercu.Show()
+        $overlayApercu.BringToFront()
+        # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
+        # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
+        # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
+        $pictureBox.Focus()
     }
 
     $resultatAsync = $ps.BeginInvoke()
@@ -6986,14 +7011,14 @@ $corpsFonctions
     $minuteur = New-Object System.Windows.Forms.Timer
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
-        if ($pisteApercu) {
+        if ($overlayApercu) {
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
                 $nouveauLeft = 0
                 $directionBarre = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
-                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $overlayApercu.Width) {
+                $nouveauLeft = $overlayApercu.Width - $remplissageApercu.Width
                 $directionBarre = -1
             }
             $remplissageApercu.Left = $nouveauLeft
@@ -7030,7 +7055,7 @@ $corpsFonctions
         } finally {
             if (-not $estPerime) { $pictureBox.Cursor = [System.Windows.Forms.Cursors]::Default }
             if ($boutonStop) { $boutonStop.Enabled = $false }
-            if ($pisteApercu) { $pisteApercu.Visible = $false }
+            if ($overlayApercu) { $overlayApercu.Hide() }
             $ps.Dispose()
             $runspace.Close()
         }
