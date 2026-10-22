@@ -7,25 +7,29 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
-## Fix : "ultra moche" + confirmation que la barre ne se ferme PAS trop tôt, 23/10/2026
+## Fix : "ultra moche" (taille 300x39 au lieu de 300x6) - question encore ouverte sur une fermeture trop tôt, 23/10/2026
 
-Le diagnostic a payé une 2e fois. Tomyn renvoie le journal complet d'un chargement de 84,2s
-(lecture 29,4s + dessin 54,8s) : 388 lignes DIAGNOSTIC, Visible=True sur TOUTE la durée, jusqu'à la
-toute dernière ligne juste avant "Apercu : lecture... dessin...". **Confirmé par les logs : la
-barre ne se ferme pas trop tôt** — elle est restée affichée pendant tout le calcul. Le "se finit
-très vite" de Tomyn décrivait donc l'ANIMATION (chaque aller simple du va-et-vient ne prend que
-4,8s sur une piste de 300px à 10px/tic, largement plus court que les 84s totales) plutôt qu'une
-fermeture prématurée réelle.
+Le diagnostic a payé une 2e fois, mais partiellement. Un premier journal envoyé par Tomyn (chargement
+de 84,2s, fichier avec angle déjà en cache) montrait 388 lignes DIAGNOSTIC, Visible=True sur toute la
+durée, jusqu'à la dernière ligne juste avant "Apercu : lecture... dessin...". Ce journal-là ne
+montrait donc PAS de fermeture prématurée.
 
-En revanche, le diagnostic révèle la vraie cause de "ultra moche" : **taille réelle 300x39**, alors
-que 300x6 avait été demandé. Même avec `FormBorderStyle=None`, Windows impose une hauteur MINIMALE
-de fenêtre (~39px, la hauteur minimale système classique) tant que `MinimumSize` n'est pas
-explicitement mise à (0,0) - d'où un gros bloc épais sombre avec le petit filet orange de 6px perdu
-dans un coin, au lieu d'une fine bande nette. `MinimumSize` mise à (0,0) avant `Size` sur les deux
-fenêtres-overlay - devrait donner la vraie bande fine de 6px attendue.
+Juste après, Tomyn signale : "elle se ferme en quelques secondes alors que le preview se charge en
+environ 2-3 minutes" - sur un chargement visiblement différent (beaucoup plus long, probablement un
+fichier sans angle en cache cette fois). Les deux retours ne se contredisent pas forcément (deux
+fichiers/situations différentes), mais la question d'une fermeture trop tôt reste OUVERTE pour ce
+cas précis - pas encore de diagnostic sur CE chargement-là.
 
-Diagnostic laissé actif pour confirmer que la taille devient bien 300x6 sur le prochain test, à
-retirer une fois confirmé.
+Le diagnostic révèle en revanche, de façon solide (confirmé sur le premier journal), la vraie cause
+de "ultra moche" : **taille réelle 300x39**, alors que 300x6 avait été demandé. Même avec
+`FormBorderStyle=None`, Windows impose une hauteur MINIMALE de fenêtre (~39px, la hauteur minimale
+système classique) tant que `MinimumSize` n'est pas explicitement mise à (0,0) - d'où un gros bloc
+épais sombre avec le petit filet orange de 6px perdu dans un coin, au lieu d'une fine bande nette.
+`MinimumSize` mise à (0,0) avant `Size` sur les deux fenêtres-overlay - devrait donner la vraie bande
+fine de 6px attendue.
+
+Diagnostic laissé actif - besoin du journal complet du chargement de 2-3 minutes qui se ferme trop
+tôt pour trancher cette question séparément.
 
 ---
 
