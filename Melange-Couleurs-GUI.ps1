@@ -3865,34 +3865,45 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             )
             $grp.Chemin.AddPolygon($pts)
         } else {
-            # 22/10/2026, Tomyn : "des manques" meme avec la revendication multi-cellule plus haut -
-            # le carre etait jusqu'ici centre sur le centroide REEL du triangle representant, qui
-            # peut tomber n'importe ou a l'interieur de sa cellule (pres d'un bord). Desormais chaque
-            # cellule revendiquee est dessinee centree sur SA PROPRE cellule (CellX+0.5, CellY+0.5),
-            # pas sur la position reelle du triangle - garantit que cette cellule precise est
-            # entierement couverte par son carre, quelle que soit la position d'origine du triangle
-            # qui l'a revendiquee.
+            # 22/10/2026 soir, Tomyn : "escalier ET flou en meme temps" avec le carre ci-dessus
+            # (axis-aligned, meme avec AntiAlias actif) - diagnostic : un carre NON ORIENTE ne peut
+            # PAS representer une arete diagonale autrement qu'en marches, quelle que soit sa
+            # taille ; l'anticrenelage ne peut qu'adoucir les bords de CE carre (d'ou le "flou" en
+            # plus), il ne lui redonne jamais la bonne orientation (d'ou "l'escalier" qui reste).
+            # La tentative precedente ("vraie geometrie", commit 571b397) avait la BONNE orientation
+            # mais une opacite trop faible sur les triangles sous-pixel (couverture partielle fidele
+            # mais minime sous AntiAlias) - revertee ("pire qu'avant", pale/delave).
+            # Nouvelle approche (jamais tentee avant) : garder la VRAIE forme/orientation du
+            # triangle (ses 3 vrais sommets, pas un carre) mais l'agrandir autour de son PROPRE
+            # centre jusqu'a une aire suffisante pour une opacite pleine sous AntiAlias, puis la
+            # recentrer sur la cellule revendiquee (meme ancrage CellX+0.5/CellY+0.5 que le carre
+            # avant lui, pour ne pas reintroduire les "manques" deja corriges). Une arete diagonale
+            # est ainsi approximee par une suite de petits triangles INCLINES (qui suivent sa vraie
+            # direction), pas par des carres droits - en theorie plus proche d'une vraie diagonale,
+            # tout en restant pleinement opaque. Non verifiable visuellement ici (GDI+ indisponible
+            # sous Linux) - a tester reellement avant de considerer ce point clos.
             $cx = $cel.CellX + 0.5
             $cy = $cel.CellY + 0.5
-            # 22/10/2026, Tomyn : 0.8, puis 1.3, puis 2.2 (px de demi-cote) - chaque augmentation
-            # changeait a peine le rendu, ce qui aurait du mettre la puce a l'oreille plus tot : le
-            # vrai probleme etait le FillMode "Alternate" du GraphicsPath (voir le commentaire plus
-            # haut, pres de la creation du groupe) qui ANNULAIT les zones de chevauchement au lieu
-            # de les fusionner - plus les carres etaient gros, plus il y avait de chevauchement
-            # annule, d'ou le quasi-statu-quo malgre les augmentations. Maintenant que le
-            # GraphicsPath est en "Winding" (fusionne au lieu d'annuler), un chevauchement modeste
-            # suffit a nouveau - retour a une taille raisonnable (1,4 px, 0,4 px de chevauchement
-            # avec les cellules voisines a 1 px) pour un rendu net, sans le flou inutile des
-            # tailles precedentes qui compensaient (a tort) le vrai bug.
-            # 22/10/2026, Tomyn : "peut mieux faire" avec 0.7 (1,4 px) - le fond est acquis (forme
-            # et ombrage nettement visibles, plus de nuage de points), reste un grain residuel sur
-            # les zones claires/en bordure. Leger coup de pouce (0.7 -> 0.95, soit 1,9 px, 0,9 px de
-            # chevauchement) pour lisser ce grain, maintenant que le chevauchement fusionne
-            # correctement (Winding) - pas besoin de grossir beaucoup, juste assez pour fermer les
-            # derniers petits interstices.
-            $DEMI_TAILLE_CARRE = 0.95
-            $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
-            $grp.Chemin.AddRectangle($rect)
+            $fsx1 = $marge + ($p1x[$i] - $minX) * $echelle
+            $fsy1 = $hauteur - ($marge + ($p1y[$i] - $minY) * $echelle)
+            $fsx2 = $marge + ($p2x[$i] - $minX) * $echelle
+            $fsy2 = $hauteur - ($marge + ($p2y[$i] - $minY) * $echelle)
+            $fsx3 = $marge + ($p3x[$i] - $minX) * $echelle
+            $fsy3 = $hauteur - ($marge + ($p3y[$i] - $minY) * $echelle)
+            $fcx = ($fsx1 + $fsx2 + $fsx3) / 3.0
+            $fcy = ($fsy1 + $fsy2 + $fsy3) / 3.0
+            # Aire cible ~3,6 px^2 : meme ordre de grandeur que le carre de 1,9 px de cote qu'elle
+            # remplace (0.95 de demi-cote -> (2*0.95)^2 = 3.61), pour repartir d'une densite visuelle
+            # deja connue plutot que de deviner une nouvelle valeur a l'aveugle. Jamais retrecie
+            # (Max avec 1.0) : un triangle deja assez grand n'est pas touche.
+            $AIRE_CIBLE_SOUSPIXEL = 3.6
+            $facteur = [math]::Max(1.0, [math]::Sqrt($AIRE_CIBLE_SOUSPIXEL / $aireEcran[$i]))
+            $pts = @(
+                (New-Object System.Drawing.PointF(($cx + ($fsx1 - $fcx) * $facteur), ($cy + ($fsy1 - $fcy) * $facteur)))
+                (New-Object System.Drawing.PointF(($cx + ($fsx2 - $fcx) * $facteur), ($cy + ($fsy2 - $fcy) * $facteur)))
+                (New-Object System.Drawing.PointF(($cx + ($fsx3 - $fcx) * $facteur), ($cy + ($fsy3 - $fcy) * $facteur)))
+            )
+            $grp.Chemin.AddPolygon($pts)
         }
         $grp.SommeZ += $zMoyen[$i]
         $grp.Compte++
@@ -6560,9 +6571,17 @@ Ajouter-ZoomApercu $pictureAvant "avant"
 # masquee par Mettre-A-Jour-Apercu et Redessiner-Apercu-AvecRotation, qui retrouvent ces controles
 # via $script:ApercuEtat["__ProgressPiste_<cle>__"]/["__ProgressRemplissage_<cle>__"], meme
 # principe que $labelAngle juste au-dessus.
+# 22/10/2026, soir, Tomyn : "rien n'apparait du tout" - la bande chevauchait jusqu'ici les 5
+# derniers pixels DU BAS DE LA PICTUREBOX elle-meme (meme rectangle), ce qui la rend dependante de
+# l'ordre d'empilement (z-order) entre deux controles freres - un empilement que je ne peux pas
+# verifier visuellement ici (System.Drawing/WinForms ne tourne pas sous Linux, impossible de
+# capturer un rendu reel pour confirmer avant d'envoyer). Repositionnee desormais ENTIEREMENT SOUS
+# la PictureBox, dans l'interstice de 4 px deja existant avant le label d'angle (hauteur 3 px, ne
+# touche jamais le rectangle de la PictureBox) : aucun chevauchement possible, donc aucune
+# dependance a un empilement non verifiable.
 $pisteApercuAvant = New-Object System.Windows.Forms.Panel
-$pisteApercuAvant.Location = New-Object System.Drawing.Point($xApercu, ($yPictureAvant + $hauteurApercu - 5))
-$pisteApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 5)
+$pisteApercuAvant.Location = New-Object System.Drawing.Point($xApercu, ($yPictureAvant + $hauteurApercu + 1))
+$pisteApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 3)
 $pisteApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $pisteApercuAvant.Anchor = "Top, Right"
 $pisteApercuAvant.Visible = $false
@@ -6570,7 +6589,7 @@ $form.Controls.Add($pisteApercuAvant)
 $pisteApercuAvant.BringToFront()
 $remplissageApercuAvant = New-Object System.Windows.Forms.Panel
 $remplissageApercuAvant.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 5)
+$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 3)
 $remplissageApercuAvant.BackColor = $THEME.AccentChaud
 $pisteApercuAvant.Controls.Add($remplissageApercuAvant)
 $script:ApercuEtat["__ProgressPiste_avant__"] = $pisteApercuAvant
@@ -6628,8 +6647,8 @@ Ajouter-ZoomApercu $pictureApres "apres"
 
 # Meme bande de progression que $pisteApercuAvant plus haut (voir son commentaire pour le detail).
 $pisteApercuApres = New-Object System.Windows.Forms.Panel
-$pisteApercuApres.Location = New-Object System.Drawing.Point($xApercu, ($yPictureApres + $hauteurApercu - 5))
-$pisteApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 5)
+$pisteApercuApres.Location = New-Object System.Drawing.Point($xApercu, ($yPictureApres + $hauteurApercu + 1))
+$pisteApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 3)
 $pisteApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $pisteApercuApres.Anchor = "Top, Right"
 $pisteApercuApres.Visible = $false
@@ -6637,7 +6656,7 @@ $form.Controls.Add($pisteApercuApres)
 $pisteApercuApres.BringToFront()
 $remplissageApercuApres = New-Object System.Windows.Forms.Panel
 $remplissageApercuApres.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 5)
+$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 3)
 $remplissageApercuApres.BackColor = $THEME.AccentChaud
 $pisteApercuApres.Controls.Add($remplissageApercuApres)
 $script:ApercuEtat["__ProgressPiste_apres__"] = $pisteApercuApres

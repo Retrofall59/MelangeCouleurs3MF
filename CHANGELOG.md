@@ -7,6 +7,45 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix (non vérifié visuellement) : escalier + flou toujours présents en même temps, 22/10/2026, soir
+
+Tomyn, après le fix couleur : flou ET escalier toujours là ensemble sur l'aperçu. Diagnostic : les
+petits carrés (axis-aligned, utilisés pour tout triangle sous-pixel) ne peuvent représenter une
+arête diagonale qu'en marches, quelle que soit leur taille — l'anti-crénelage (AntiAlias) adoucit
+seulement les bords de CES carrés, il ne leur redonne jamais la bonne orientation. D'où les deux
+symptômes en même temps : l'escalier (forme carrée) ET le flou (bords du carré adoucis).
+
+La tentative précédente de "vraie géométrie" (commit 571b397, revertée) avait la bonne
+orientation mais pas assez d'opacité sur les triangles sous-pixel sous AntiAlias (couverture
+partielle fidèle mais minime).
+
+Nouvelle approche, jamais tentée avant : garder la VRAIE forme/orientation du triangle (ses 3
+vrais sommets) mais l'agrandir autour de son propre centre jusqu'à une aire cible (~3,6 px², même
+ordre de grandeur que le carré qu'elle remplace) pour une opacité pleine, puis la recentrer sur la
+cellule revendiquée (même ancrage que le carré, pour ne pas réintroduire les "manques" déjà
+corrigés). Une arête diagonale est ainsi approximée par une suite de petits triangles INCLINÉS qui
+suivent sa vraie direction, pas par des carrés droits.
+
+**Important : non vérifiable visuellement dans cet environnement** (GDI+/System.Drawing
+indisponible sous Linux, seule la syntaxe a pu être contrôlée) — à tester réellement avant de
+considérer ce point résolu.
+
+---
+
+## Fix (hypothèse) : barre de progression invisible, 22/10/2026, soir
+
+Tomyn : "rien n'apparaît du tout" pour la barre de progression ajoutée plus haut, sur aucun des
+deux aperçus. La bande chevauchait jusqu'ici les 5 derniers pixels DU BAS DE LA PictureBox
+elle-même (même rectangle), ce qui la rendait dépendante de l'ordre d'empilement (z-order) entre
+deux contrôles frères — un empilement que je ne peux pas vérifier visuellement ici non plus.
+
+Repositionnée entièrement SOUS la PictureBox, dans l'interstice de 4px déjà existant avant le
+label d'angle (hauteur réduite à 3px pour y tenir sans jamais toucher le rectangle de la
+PictureBox) : plus aucun chevauchement, donc plus aucune dépendance à un empilement non
+vérifiable. Aucun autre changement dans la logique d'affichage/animation/masquage.
+
+---
+
 ## Fix : couleur violette systématique sur l'aperçu "avant", 22/10/2026, soir
 
 Tomyn : "les couleurs de la previews avant ne s'occupe pas du tout les couleurs [...] j'ai beau
