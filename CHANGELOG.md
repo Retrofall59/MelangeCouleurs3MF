@@ -7,6 +7,31 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : la barre de progression preview reprend la vraie carte de $overlayProgression, 23/10/2026
+
+Tomyn, après le passage au `ProgressBar` natif en `Style="Marquee"` de l'entrée précédente :
+"elle est toujours ultra moche pkps prendre la même barre que celle de la prod".
+
+Le vrai problème n'était ni la couleur ni le type d'animation : `$overlayProgression` (la fenêtre
+du mélange, jolie) est une **petite carte** - fond violet (`$THEME.FondBanniere`), titre, piste
+sombre + remplissage orange, avec des marges - alors que la barre preview, dans les deux versions
+précédentes (Panel puis ProgressBar), était une simple bande collée brute sous l'image, sans
+carte, sans titre, sans marge. `ProgressBar` en `Style="Marquee"` a en plus un défaut supplémentaire
+: ce style ignore largement `BackColor`/`ForeColor` sur Windows (rendu par les styles visuels
+natifs), donc la couleur orange de la marque ne s'appliquait probablement même pas - rendu bleu/gris
+générique Windows au lieu des couleurs de l'appli.
+
+Nouvelle fonction `Creer-CarteProgressionApercu` qui reconstruit la même structure que
+`$overlayProgression` (sans les boutons Pause/Annuler, pas d'action possible pendant un calcul
+d'aperçu) : carte 34px de haut, titre "Chargement de l'aperçu...", piste sombre + remplissage
+orange avec marges de 4px. Toujours pas de vraie progression chiffrée disponible depuis le
+runspace (voir les notes plus anciennes), donc le remplissage reste animé en va-et-vient - mais
+cette fois dans une carte qui ressemble vraiment à celle de la prod, pas une bande nue.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : remplacement du remplissage "va-et-vient" fait à la main par un vrai ProgressBar Windows, 23/10/2026
 
 Tomyn, après le fix `MinimumSize` : "la barre se ferme pas elle se rempli trop vite et se ferme

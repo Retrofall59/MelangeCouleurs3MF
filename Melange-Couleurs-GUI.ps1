@@ -6566,44 +6566,62 @@ Ajouter-ZoomApercu $pictureAvant "avant"
 # vraie progression chiffree possible ici (le calcul en arriere-plan, dans Nouvelle-ImageApercu, ne
 # remonte aucun avancement intermediaire au thread principal pendant qu'il tourne) - une fine bande
 # "indeterminee" (va-et-vient) suffit a montrer "ca travaille".
-# 22/10/2026, soir, Tomyn : "rien n'apparait du tout" avec un Panel enfant du formulaire principal
-# (chevauchait le bas de la PictureBox, z-order entre controles freres jamais verifiable ici) PUIS
-# avec le meme Panel repositionne sous la PictureBox (toujours rien) - Tomyn : "pourquoi tu fais pas
-# cette barre comme celle du lancement du melange" ($overlayProgression plus haut dans ce fichier,
-# DEJA PROUVEE fiable en production). Repris ICI A L'IDENTIQUE : une fenetre TopMost separee
-# (FormBorderStyle=None, ShowInTaskbar=false, StartPosition=Manual), pas un Panel enfant - plus
-# aucune question d'empilement avec quoi que ce soit, elle flotte au-dessus de tout. Positionnee au
-# moment de l'affichage juste sous la PictureBox via PointToScreen (coordonnees ECRAN, pas
-# coordonnees du formulaire). Affichee/animee/masquee par Mettre-A-Jour-Apercu et
-# Redessiner-Apercu-AvecRotation, qui retrouvent ces controles via
-# $script:ApercuEtat["__ProgressOverlay_<cle>__"]/["__ProgressRemplissage_<cle>__"].
-$overlayApercuAvant = New-Object System.Windows.Forms.Form
-$overlayApercuAvant.FormBorderStyle = "None"
-$overlayApercuAvant.ShowInTaskbar = $false
-$overlayApercuAvant.TopMost = $true
-$overlayApercuAvant.StartPosition = "Manual"
-# 23/10/2026, Tomyn : "ultra moche" - diagnostic confirme (taille reelle 300x39 au lieu des 300x6
-# demandes) : meme avec FormBorderStyle=None, Windows impose une hauteur MINIMALE de fenetre
-# (environ 39px, la hauteur minimale systeme classique) tant que MinimumSize n'est pas explicitement
-# mise a zero - d'ou un gros bloc epais avec le petit filet orange de 6px perdu dans le coin,
-# au lieu d'une fine bande nette. Corrige en mettant MinimumSize a (0,0) AVANT Size.
-$overlayApercuAvant.MinimumSize = New-Object System.Drawing.Size(0, 0)
-$overlayApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
-$overlayApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-# 23/10/2026, Tomyn : "ultra moche pas comme la barre de progression prod qui elle est joli" - le
-# Panel anime a la main (va-et-vient calcule tic par tic) donnait un bloc qui finissait de glisser
-# en quelques secondes puis restait statique jusqu'a la fin reelle du calcul, pas franchement joli.
-# Remplace par un vrai controle Windows ProgressBar en style "Marquee" : c'est le style NATIF concu
-# exactement pour une progression indeterminee (duree inconnue), anime en continu tout seul par
-# Windows (aucun calcul de position a la main necessaire), avec le rendu natif/poli attendu -
-# beaucoup plus proche visuellement de $overlayProgression que le bricolage precedent.
-$remplissageApercuAvant = New-Object System.Windows.Forms.ProgressBar
-$remplissageApercuAvant.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
-$remplissageApercuAvant.Style = "Marquee"
-$remplissageApercuAvant.MarqueeAnimationSpeed = 30
-$overlayApercuAvant.Controls.Add($remplissageApercuAvant)
+# 22/10/2026, soir, Tomyn : "rien n'apparait du tout" avec un Panel enfant du formulaire principal,
+# puis "pourquoi tu fais pas cette barre comme celle du lancement du melange" ($overlayProgression
+# plus haut, deja prouvee fiable en production) - repris en fenetre TopMost separee comme elle.
+# 23/10/2026, Tomyn (apres correctif MinimumSize) : "ultra moche pas comme la barre de progression
+# prod qui elle est joli" - une premiere tentative (ProgressBar natif Style="Marquee") n'a pas
+# regle le probleme : "toujours ultra moche pkps prendre la meme barre que celle de la prod". Le
+# vrai probleme n'etait ni la couleur ni l'animation : $overlayProgression est une PETITE CARTE
+# (fond violet $THEME.FondBanniere, titre, piste sombre + remplissage orange) - pas une simple
+# bande collee sous l'image. Cette fonction reconstruit exactement cette meme carte (sans les
+# boutons Pause/Annuler, pas d'action possible ici), reutilisee pour "avant" et "apres" plutot que
+# dupliquee deux fois.
+function Creer-CarteProgressionApercu([int]$largeur) {
+    $hauteurCarte = 34
+    $overlay = New-Object System.Windows.Forms.Form
+    $overlay.FormBorderStyle = "None"
+    $overlay.ShowInTaskbar = $false
+    $overlay.TopMost = $true
+    $overlay.StartPosition = "Manual"
+    # Meme correctif que le 23/10/2026 precedent : sans MinimumSize=(0,0), Windows impose une
+    # hauteur minimale de fenetre (~39px) meme avec FormBorderStyle=None.
+    $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
+    $overlay.Size = New-Object System.Drawing.Size($largeur, $hauteurCarte)
+    $overlay.BackColor = $THEME.FondBanniere
+
+    $labelTitre = New-Object System.Windows.Forms.Label
+    $labelTitre.Text = "Chargement de l'apercu..."
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $labelTitre.ForeColor = [System.Drawing.Color]::White
+    $labelTitre.BackColor = [System.Drawing.Color]::Transparent
+    $labelTitre.TextAlign = "MiddleCenter"
+    $labelTitre.Location = New-Object System.Drawing.Point(4, 2)
+    $labelTitre.Size = New-Object System.Drawing.Size(($largeur - 8), 16)
+    $overlay.Controls.Add($labelTitre)
+
+    $piste = New-Object System.Windows.Forms.Panel
+    $piste.Location = New-Object System.Drawing.Point(4, 20)
+    $piste.Size = New-Object System.Drawing.Size(($largeur - 8), 8)
+    $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+    $overlay.Controls.Add($piste)
+
+    $largeurRemplissage = [Math]::Max(30, [int](($largeur - 8) * 0.25))
+    $remplissage = New-Object System.Windows.Forms.Panel
+    $remplissage.Location = New-Object System.Drawing.Point(0, 0)
+    $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 8)
+    $remplissage.BackColor = $THEME.AccentChaud
+    $piste.Controls.Add($remplissage)
+
+    [PSCustomObject]@{ Overlay = $overlay; Piste = $piste; Remplissage = $remplissage }
+}
+
+$carteApercuAvant = Creer-CarteProgressionApercu $largeurApercu
+$overlayApercuAvant = $carteApercuAvant.Overlay
+$pisteApercuAvant = $carteApercuAvant.Piste
+$remplissageApercuAvant = $carteApercuAvant.Remplissage
 $script:ApercuEtat["__ProgressOverlay_avant__"] = $overlayApercuAvant
+$script:ApercuEtat["__ProgressPiste_avant__"] = $pisteApercuAvant
 $script:ApercuEtat["__ProgressRemplissage_avant__"] = $remplissageApercuAvant
 
 # Affiche l'angle actuellement applique (10/10/2026, Tomyn : "go les amelio") - evite d'avoir a
@@ -6656,26 +6674,13 @@ Ajouter-MenuContextuelApercu $pictureApres "apres"
 Ajouter-RaccourcisClavierApercu $pictureApres "apres"
 Ajouter-ZoomApercu $pictureApres "apres"
 
-# Meme fenetre-overlay TopMost que $overlayApercuAvant plus haut (voir son commentaire pour le
-# detail - meme recette que $overlayProgression, deja prouvee fiable en production).
-$overlayApercuApres = New-Object System.Windows.Forms.Form
-$overlayApercuApres.FormBorderStyle = "None"
-$overlayApercuApres.ShowInTaskbar = $false
-$overlayApercuApres.TopMost = $true
-$overlayApercuApres.StartPosition = "Manual"
-# Meme correctif MinimumSize que $overlayApercuAvant plus haut (voir son commentaire).
-$overlayApercuApres.MinimumSize = New-Object System.Drawing.Size(0, 0)
-$overlayApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
-$overlayApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-# Meme ProgressBar natif en style "Marquee" que $remplissageApercuAvant plus haut (voir son
-# commentaire).
-$remplissageApercuApres = New-Object System.Windows.Forms.ProgressBar
-$remplissageApercuApres.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
-$remplissageApercuApres.Style = "Marquee"
-$remplissageApercuApres.MarqueeAnimationSpeed = 30
-$overlayApercuApres.Controls.Add($remplissageApercuApres)
+# Meme carte-overlay que $overlayApercuAvant plus haut (voir Creer-CarteProgressionApercu).
+$carteApercuApres = Creer-CarteProgressionApercu $largeurApercu
+$overlayApercuApres = $carteApercuApres.Overlay
+$pisteApercuApres = $carteApercuApres.Piste
+$remplissageApercuApres = $carteApercuApres.Remplissage
 $script:ApercuEtat["__ProgressOverlay_apres__"] = $overlayApercuApres
+$script:ApercuEtat["__ProgressPiste_apres__"] = $pisteApercuApres
 $script:ApercuEtat["__ProgressRemplissage_apres__"] = $remplissageApercuApres
 
 $labelAngleApres = New-Object System.Windows.Forms.Label
@@ -6828,19 +6833,19 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
     # 22/10/2026, Tomyn : "barre de progression de generation previews" - voir le commentaire detaille
-    # pres de la creation de $overlayApercuAvant/$overlayApercuApres plus haut (meme recette que
-    # $overlayProgression, deja prouvee fiable en production). Positionnee au moment de l'affichage
-    # juste sous la PictureBox (coordonnees ECRAN via PointToScreen, pas coordonnees du formulaire -
-    # c'est une fenetre separee, pas un enfant du formulaire). Affichee des le lancement du calcul
-    # en arriere-plan, masquee dans le "finally" ci-dessous, succes ou echec.
-    # 23/10/2026, Tomyn : "elle se rempli en quelque seconde et elle est ultra moche pas comme la
-    # barre de progression prod" - le remplissage etait anime a la main (va-et-vient 10px/tic dans
-    # un Panel), ce qui finissait sa course en ~4,8s puis restait visuellement statique, et avait
-    # un rendu grossier. $remplissageApercu est maintenant un vrai ProgressBar en Style="Marquee" -
-    # Windows anime lui-meme le defile en continu, sans code de position manuel ici.
+    # pres de Creer-CarteProgressionApercu plus haut (meme recette que $overlayProgression, deja
+    # prouvee fiable en production : une carte avec titre + piste + remplissage, pas juste une bande
+    # collee sous l'image). Positionnee au moment de l'affichage juste sous la PictureBox
+    # (coordonnees ECRAN via PointToScreen, pas coordonnees du formulaire - c'est une fenetre
+    # separee, pas un enfant du formulaire). Affichee des le lancement du calcul en arriere-plan,
+    # animee en va-et-vient a chaque tick (pas de vraie progression chiffree disponible depuis le
+    # runspace, voir le commentaire plus haut), masquee dans le "finally" ci-dessous, succes ou echec.
+    $directionBarre = 1
     $overlayApercu = $etatPartage["__ProgressOverlay_${cle}__"]
+    $pisteApercu = $etatPartage["__ProgressPiste_${cle}__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_${cle}__"]
     if ($overlayApercu) {
+        $remplissageApercu.Left = 0
         $overlayApercu.Show()
         $overlayApercu.BringToFront()
         # 23/10/2026 : meme recette que Afficher-OverlayProgression (la fenetre du melange, fiable
@@ -6879,10 +6884,18 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            # 23/10/2026 : plus de code de position manuelle ici - $remplissageApercu est un
-            # ProgressBar Style="Marquee", Windows anime le defile en continu lui-meme tant que
-            # le Form est visible, aucun calcul de $pas/$directionBarre/.Left n'est plus necessaire
-            # (voir le commentaire plus haut, au moment de la creation de l'overlay).
+            # Va-et-vient simple dans la piste (comme l'ancien Panel), borne a la largeur de
+            # $pisteApercu (pas $overlayApercu : la carte a des marges autour de la piste desormais).
+            $pas = 10 * $directionBarre
+            $nouveauLeft = $remplissageApercu.Left + $pas
+            if ($nouveauLeft -le 0) {
+                $nouveauLeft = 0
+                $directionBarre = 1
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
+                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+                $directionBarre = -1
+            }
+            $remplissageApercu.Left = $nouveauLeft
         }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()
@@ -7016,16 +7029,15 @@ $corpsFonctions
     $script:ApercuEtat["__PSActif_${cle}__"] = $ps
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
-    # Meme fenetre-overlay indeterminee que Mettre-A-Jour-Apercu (voir son commentaire pour le
-    # detail - meme recette que $overlayProgression) - la rotation interactive est plus courte
-    # (resolution reduite juste au-dessus) mais reste perceptible, vaut la peine d'etre montree ici
-    # aussi.
-    # 23/10/2026 : $remplissageApercu est un ProgressBar Style="Marquee" (voir le commentaire dans
-    # Mettre-A-Jour-Apercu) - plus de variable de direction/diagnostic ici, Windows anime le defile
-    # lui-meme.
+    # Meme carte-overlay que Mettre-A-Jour-Apercu (voir Creer-CarteProgressionApercu et son
+    # commentaire) - la rotation interactive est plus courte (resolution reduite juste au-dessus)
+    # mais reste perceptible, vaut la peine d'etre montree ici aussi.
+    $directionBarre = 1
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_${cle}__"]
+    $pisteApercu = $script:ApercuEtat["__ProgressPiste_${cle}__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_${cle}__"]
     if ($overlayApercu) {
+        $remplissageApercu.Left = 0
         $overlayApercu.Show()
         $overlayApercu.BringToFront()
         [System.Windows.Forms.Application]::DoEvents()
@@ -7047,6 +7059,16 @@ $corpsFonctions
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
+            $pas = 10 * $directionBarre
+            $nouveauLeft = $remplissageApercu.Left + $pas
+            if ($nouveauLeft -le 0) {
+                $nouveauLeft = 0
+                $directionBarre = 1
+            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $pisteApercu.Width) {
+                $nouveauLeft = $pisteApercu.Width - $remplissageApercu.Width
+                $directionBarre = -1
+            }
+            $remplissageApercu.Left = $nouveauLeft
         }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()
