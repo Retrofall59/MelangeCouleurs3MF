@@ -6590,10 +6590,18 @@ $overlayApercuAvant.StartPosition = "Manual"
 $overlayApercuAvant.MinimumSize = New-Object System.Drawing.Size(0, 0)
 $overlayApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
 $overlayApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-$remplissageApercuAvant = New-Object System.Windows.Forms.Panel
+# 23/10/2026, Tomyn : "ultra moche pas comme la barre de progression prod qui elle est joli" - le
+# Panel anime a la main (va-et-vient calcule tic par tic) donnait un bloc qui finissait de glisser
+# en quelques secondes puis restait statique jusqu'a la fin reelle du calcul, pas franchement joli.
+# Remplace par un vrai controle Windows ProgressBar en style "Marquee" : c'est le style NATIF concu
+# exactement pour une progression indeterminee (duree inconnue), anime en continu tout seul par
+# Windows (aucun calcul de position a la main necessaire), avec le rendu natif/poli attendu -
+# beaucoup plus proche visuellement de $overlayProgression que le bricolage precedent.
+$remplissageApercuAvant = New-Object System.Windows.Forms.ProgressBar
 $remplissageApercuAvant.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuAvant.Size = New-Object System.Drawing.Size(60, 6)
-$remplissageApercuAvant.BackColor = $THEME.AccentChaud
+$remplissageApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
+$remplissageApercuAvant.Style = "Marquee"
+$remplissageApercuAvant.MarqueeAnimationSpeed = 30
 $overlayApercuAvant.Controls.Add($remplissageApercuAvant)
 $script:ApercuEtat["__ProgressOverlay_avant__"] = $overlayApercuAvant
 $script:ApercuEtat["__ProgressRemplissage_avant__"] = $remplissageApercuAvant
@@ -6659,10 +6667,13 @@ $overlayApercuApres.StartPosition = "Manual"
 $overlayApercuApres.MinimumSize = New-Object System.Drawing.Size(0, 0)
 $overlayApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
 $overlayApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
-$remplissageApercuApres = New-Object System.Windows.Forms.Panel
+# Meme ProgressBar natif en style "Marquee" que $remplissageApercuAvant plus haut (voir son
+# commentaire).
+$remplissageApercuApres = New-Object System.Windows.Forms.ProgressBar
 $remplissageApercuApres.Location = New-Object System.Drawing.Point(0, 0)
-$remplissageApercuApres.Size = New-Object System.Drawing.Size(60, 6)
-$remplissageApercuApres.BackColor = $THEME.AccentChaud
+$remplissageApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
+$remplissageApercuApres.Style = "Marquee"
+$remplissageApercuApres.MarqueeAnimationSpeed = 30
 $overlayApercuApres.Controls.Add($remplissageApercuApres)
 $script:ApercuEtat["__ProgressOverlay_apres__"] = $overlayApercuApres
 $script:ApercuEtat["__ProgressRemplissage_apres__"] = $remplissageApercuApres
@@ -6821,22 +6832,15 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # $overlayProgression, deja prouvee fiable en production). Positionnee au moment de l'affichage
     # juste sous la PictureBox (coordonnees ECRAN via PointToScreen, pas coordonnees du formulaire -
     # c'est une fenetre separee, pas un enfant du formulaire). Affichee des le lancement du calcul
-    # en arriere-plan, animee en va-et-vient a chaque tick du minuteur existant (pas besoin d'un
-    # second Timer), masquee dans le "finally" ci-dessous, succes ou echec.
-    # Direction du va-et-vient en variable LOCALE simple (capturee par la closure, comme
-    # $overlayApercu/$remplissageApercu juste en-dessous) plutot que dans $etatPartage - pas besoin
-    # du hashtable partage pour un etat qui ne sert qu'a CE minuteur.
-    $directionBarre = 1
-    $diagnosticBarreEcrit = $false
+    # en arriere-plan, masquee dans le "finally" ci-dessous, succes ou echec.
+    # 23/10/2026, Tomyn : "elle se rempli en quelque seconde et elle est ultra moche pas comme la
+    # barre de progression prod" - le remplissage etait anime a la main (va-et-vient 10px/tic dans
+    # un Panel), ce qui finissait sa course en ~4,8s puis restait visuellement statique, et avait
+    # un rendu grossier. $remplissageApercu est maintenant un vrai ProgressBar en Style="Marquee" -
+    # Windows anime lui-meme le defile en continu, sans code de position manuel ici.
     $overlayApercu = $etatPartage["__ProgressOverlay_${cle}__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_${cle}__"]
-    # 23/10/2026 : diagnostic INCONDITIONNEL (le precedent etait imbrique dans le "if" plus bas, donc
-    # totalement absent du journal si $overlayApercu est null - ce qui etait justement en train de se
-    # passer, le journal envoye par Tomyn ne contenait AUCUNE ligne DIAGNOSTIC malgre 263 tics sur un
-    # calcul de 52,7s). Celui-ci s'affiche a coup sur, qu'il soit trouve ou pas.
-    Ecrire-Journal ("DIAGNOSTIC barre (case '$cle') : overlayApercu = " + $(if ($overlayApercu) { "TROUVE" } else { "NULL - cle '__ProgressOverlay_${cle}__' absente de etatPartage (" + $etatPartage.Count + " cles au total : " + ($etatPartage.Keys -join ", ") + ")" }))
     if ($overlayApercu) {
-        $remplissageApercu.Left = 0
         $overlayApercu.Show()
         $overlayApercu.BringToFront()
         # 23/10/2026 : meme recette que Afficher-OverlayProgression (la fenetre du melange, fiable
@@ -6875,25 +6879,10 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            # 23/10/2026 : apres 4 tentatives infructueuses sans jamais pouvoir verifier visuellement
-            # ici (GDI+ indisponible sous Linux), diagnostic ECRIT DANS LE JOURNAL (une seule fois,
-            # au premier tick) plutot qu'une 5e hypothese a l'aveugle - si la barre reste invisible,
-            # ces chiffres (position ecran, taille, visibilite reelle du Form) permettront de savoir
-            # EXACTEMENT ce qui cloche au lieu de deviner encore.
-            if (-not $diagnosticBarreEcrit) {
-                $diagnosticBarreEcrit = $true
-                Ecrire-Journal ("DIAGNOSTIC barre de progression (case '$cle') : position ecran ($($pointEcran.X), $($pointEcran.Y)), taille $($overlayApercu.Width)x$($overlayApercu.Height), Visible=$($overlayApercu.Visible), PictureBox.Width=$($pictureBox.Width), PictureBox.Height=$($pictureBox.Height), ecran primaire=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)")
-            }
-            $pas = 10 * $directionBarre
-            $nouveauLeft = $remplissageApercu.Left + $pas
-            if ($nouveauLeft -le 0) {
-                $nouveauLeft = 0
-                $directionBarre = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $overlayApercu.Width) {
-                $nouveauLeft = $overlayApercu.Width - $remplissageApercu.Width
-                $directionBarre = -1
-            }
-            $remplissageApercu.Left = $nouveauLeft
+            # 23/10/2026 : plus de code de position manuelle ici - $remplissageApercu est un
+            # ProgressBar Style="Marquee", Windows anime le defile en continu lui-meme tant que
+            # le Form est visible, aucun calcul de $pas/$directionBarre/.Left n'est plus necessaire
+            # (voir le commentaire plus haut, au moment de la creation de l'overlay).
         }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()
@@ -7031,18 +7020,12 @@ $corpsFonctions
     # detail - meme recette que $overlayProgression) - la rotation interactive est plus courte
     # (resolution reduite juste au-dessus) mais reste perceptible, vaut la peine d'etre montree ici
     # aussi.
-    # Direction du va-et-vient en variable LOCALE simple (pas dans $script:ApercuEtat) : capturee par
-    # la closure comme $overlayApercu/$remplissageApercu juste en-dessous, inutile de passer par le
-    # hashtable partage pour un etat qui ne sert qu'a CE minuteur (et qui, de toute facon, ne doit
-    # jamais etre lu/ecrit via $script: a l'interieur d'une closure GetNewClosure(), voir la note plus
-    # haut pres de la creation de $script:ApercuEtat).
-    $directionBarre = 1
-    $diagnosticBarreEcrit = $false
+    # 23/10/2026 : $remplissageApercu est un ProgressBar Style="Marquee" (voir le commentaire dans
+    # Mettre-A-Jour-Apercu) - plus de variable de direction/diagnostic ici, Windows anime le defile
+    # lui-meme.
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_${cle}__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_${cle}__"]
-    Ecrire-Journal ("DIAGNOSTIC barre (case '$cle', rotation) : overlayApercu = " + $(if ($overlayApercu) { "TROUVE" } else { "NULL - cle '__ProgressOverlay_${cle}__' absente de script:ApercuEtat (" + $script:ApercuEtat.Count + " cles au total : " + ($script:ApercuEtat.Keys -join ", ") + ")" }))
     if ($overlayApercu) {
-        $remplissageApercu.Left = 0
         $overlayApercu.Show()
         $overlayApercu.BringToFront()
         [System.Windows.Forms.Application]::DoEvents()
@@ -7064,20 +7047,6 @@ $corpsFonctions
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
-            if (-not $diagnosticBarreEcrit) {
-                $diagnosticBarreEcrit = $true
-                Ecrire-Journal ("DIAGNOSTIC barre de progression (case '$cle', rotation) : position ecran ($($pointEcran.X), $($pointEcran.Y)), taille $($overlayApercu.Width)x$($overlayApercu.Height), Visible=$($overlayApercu.Visible), PictureBox.Width=$($pictureBox.Width), PictureBox.Height=$($pictureBox.Height), ecran primaire=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)")
-            }
-            $pas = 10 * $directionBarre
-            $nouveauLeft = $remplissageApercu.Left + $pas
-            if ($nouveauLeft -le 0) {
-                $nouveauLeft = 0
-                $directionBarre = 1
-            } elseif (($nouveauLeft + $remplissageApercu.Width) -ge $overlayApercu.Width) {
-                $nouveauLeft = $overlayApercu.Width - $remplissageApercu.Width
-                $directionBarre = -1
-            }
-            $remplissageApercu.Left = $nouveauLeft
         }
         if (-not $resultatAsync.IsCompleted) { return }
         $minuteur.Stop()

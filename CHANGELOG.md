@@ -7,6 +7,32 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : remplacement du remplissage "va-et-vient" fait à la main par un vrai ProgressBar Windows, 23/10/2026
+
+Tomyn, après le fix `MinimumSize` : "la barre se ferme pas elle se rempli trop vite et se ferme
+quand le chargement est ok mais elle se rempli en quelques secondes et elle est ultra moche pas
+comme la barre de progression prod qui elle est jolie". Donc : pas de fermeture prématurée (la
+question laissée ouverte dans l'entrée précédente ne se posait pas - elle ferme bien quand le
+calcul est fini), le problème est purement visuel.
+
+Cause : le remplissage était un `Panel` animé à la main, 10px tous les 200ms dans une piste de
+300px - ça atteint un bout de la piste en 4,8s puis reste visuellement figé jusqu'à la vraie fin
+du calcul (qui peut prendre 2-3 minutes). Un bloc qui bouge un peu puis se fige, avec un rendu de
+rectangle brut, donne effectivement une impression "ultra moche" comparée à la barre de
+progression du mélange (`$overlayProgression`), qui elle est un vrai contrôle animé par Windows.
+
+Remplacé par un vrai `System.Windows.Forms.ProgressBar` en `Style = "Marquee"` (le style NATIF
+conçu exactement pour une progression de durée inconnue) sur toute la largeur de l'aperçu, avec
+`MarqueeAnimationSpeed = 30`. Windows anime le défilé en continu tout seul, aucun calcul de
+position à la main n'est plus nécessaire - tout le code `$directionBarre`/`$pas`/`.Left` et le
+diagnostic qui avait servi à localiser les deux bugs précédents (clé d'interpolation, taille
+39px) ont été retirés : les deux faits qu'il avait établis sont maintenant corrigés et confirmés,
+il ne faisait plus que remplir le journal.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : "ultra moche" (taille 300x39 au lieu de 300x6) - question encore ouverte sur une fermeture trop tôt, 23/10/2026
 
 Le diagnostic a payé une 2e fois, mais partiellement. Un premier journal envoyé par Tomyn (chargement
