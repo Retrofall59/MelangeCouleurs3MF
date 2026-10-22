@@ -6607,55 +6607,46 @@ function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$r
 }
 
 function Creer-CarteProgressionApercu([int]$largeurDisponible) {
-    # 23/10/2026, Tomyn - apres une tentative de style "minimal, fond clair" annoncee mais jamais
-    # testee (il a coupe court : "non ca va etre encore plus moche pk tu prend le style de la bazre
-    # de prod en overlay") : retour a une copie FIDELE de $overlayProgression (violet plein, titre
-    # blanc en gras, rectangles simples), pas une reinvention. Verification faite sur le CODE de
-    # $overlayProgression (plus haut dans ce fichier) : AUCUN arrondi (pas de Region, pas de
-    # GraphicsPath) n'y est applique explicitement - donc plus de Definir-RegionArrondie ici non
-    # plus, pour coller exactement a la recette prod, pas a une interpretation. Dimensions reduites
-    # proportionnellement (prod : 440x192 avec 2 boutons, piste 380x10 a 86% de la largeur - ici,
-    # pas de boutons necessaires donc carte plus basse, mais memes proportions de piste/marges et
-    # meme traitement de police/couleur).
-    $largeurCarte = [Math]::Max(180, [int]($largeurDisponible * 0.65))
-    $hauteurCarte = 64
+    # 23/10/2026, Tomyn, message direct et sans ambiguite possible : "pourquoi tu ne fais pas la
+    # meme barre de progression que celle de prod en overlay mais pourquoi tu t'obstines a vouloir
+    # l'attacher a cette p***** de vignette de preview ... tu fais la meme barre de progression que
+    # celle de prod EN OUVERT". Toutes mes tentatives precedentes essayaient de caser une carte
+    # DANS/SOUS/SUR la vignette, redimensionnee a chaque fois en fonction de sa largeur - c'est
+    # precisement ce qu'il ne voulait pas. $largeurDisponible n'est donc plus utilise pour la
+    # taille : memes dimensions EXACTES que $overlayProgression (440x192), centree sur le
+    # FORMULAIRE PRINCIPAL (comme Afficher-OverlayProgression le fait pour $overlayProgression),
+    # pas sur la PictureBox. Voir le repositionnement dans Mettre-A-Jour-Apercu et
+    # Redessiner-Apercu-AvecRotation (centre sur $form desormais, plus sur $pictureBox).
+    $largeurCarte = 440
+    $hauteurCarte = 192
     $overlay = New-Object System.Windows.Forms.Form
     $overlay.FormBorderStyle = "None"
     $overlay.ShowInTaskbar = $false
     $overlay.TopMost = $true
     $overlay.StartPosition = "Manual"
-    # Meme correctif que le 23/10/2026 precedent : sans MinimumSize=(0,0), Windows impose une
-    # hauteur minimale de fenetre (~39px) meme avec FormBorderStyle=None.
-    $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
     $overlay.Size = New-Object System.Drawing.Size($largeurCarte, $hauteurCarte)
     $overlay.BackColor = $THEME.FondBanniere
 
     $labelTitre = New-Object System.Windows.Forms.Label
-    # 23/10/2026, Tomyn, capture d'ecran : le texte etait tronque EN PLEIN MOT ("Chargement de
-    # l'aperc...") - la carte (65% de la largeur de la vignette, bien plus etroite que les 440px de
-    # $overlayProgression) est trop etroite pour ce texte a cette taille de police. Raccourci pour
-    # tenir sans troncature quelle que soit la largeur de vignette.
-    $labelTitre.Text = "Chargement..."
-    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $labelTitre.Text = "Chargement de l'apercu..."
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
     $labelTitre.ForeColor = [System.Drawing.Color]::White
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
     $labelTitre.AutoSize = $false
     $labelTitre.AutoEllipsis = $true
     $labelTitre.TextAlign = "MiddleCenter"
-    $labelTitre.Location = New-Object System.Drawing.Point(8, 10)
-    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 16), 26)
+    $labelTitre.Location = New-Object System.Drawing.Point(20, 25)
+    $labelTitre.Size = New-Object System.Drawing.Size(400, 28)
     $overlay.Controls.Add($labelTitre)
 
-    # Meme proportion que $overlayProgression (piste a 86% de la largeur de la carte, centree).
-    $largeurPiste = [int]($largeurCarte * 0.86)
-    $margeLaterale = [int](($largeurCarte - $largeurPiste) / 2)
+    # Memes dimensions EXACTES que la piste/remplissage de $overlayProgression (380x10, a (30,75)).
     $piste = New-Object System.Windows.Forms.Panel
-    $piste.Location = New-Object System.Drawing.Point($margeLaterale, 42)
-    $piste.Size = New-Object System.Drawing.Size($largeurPiste, 10)
+    $piste.Location = New-Object System.Drawing.Point(30, 75)
+    $piste.Size = New-Object System.Drawing.Size(380, 10)
     $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
     $overlay.Controls.Add($piste)
 
-    $largeurRemplissage = [Math]::Max(30, [int]($largeurPiste * 0.3))
+    $largeurRemplissage = [int](380 * 0.3)
     $remplissage = New-Object System.Windows.Forms.Panel
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
     $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 10)
@@ -6927,24 +6918,17 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
-            # 23/10/2026, Tomyn : "barre toujours non visible" meme en fenetre TopMost separee -
-            # cause trouvee : pour le chargement automatique au demarrage (la seule situation que
-            # Tomyn semble avoir testee jusqu'ici, fichier rouvert tout seul a l'ouverture), CETTE
-            # fonction est appelee AVANT que $form.ShowDialog() ne s'execute (et avant
-            # $form.WindowState = "Maximized" juste avant) - a ce moment-la, PointToScreen() sur la
-            # PictureBox renvoyait une position calculee sur la fenetre PAS ENCORE affichee/maximisee
-            # (position d'avant-affichage, qui ne correspond a rien une fois la fenetre reellement
-            # montree et agrandie) : la barre se dessinait bel et bien, juste au mauvais endroit de
-            # l'ecran, invisible pour Tomyn. Recalculer la position ICI, a CHAQUE tick (donc apres
-            # que le premier tick arrive, le formulaire principal est deja affiche et maximise dans
-            # tous les cas, l'auto-chargement comme un chargement manuel) corrige les deux situations
-            # sans distinction de cas particulier, et gere en prime un deplacement de la fenetre
-            # principale pendant un calcul (bonus, pas la cause initiale).
-            # 23/10/2026, Tomyn, 3e capture d'ecran : plus accrochee SOUS la PictureBox (bande pleine
-            # largeur) - centree SUR elle (zone blanche, vide pendant le chargement), comme un vrai
-            # popup flottant plutot qu'une barre d'etat collee. Voir le commentaire dans
-            # Creer-CarteProgressionApercu.
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(([int](($pictureBox.Width - $overlayApercu.Width) / 2)), ([int](($pictureBox.Height - $overlayApercu.Height) / 2)))))
+            # 23/10/2026, Tomyn, message direct : "pourquoi tu t'obstines a vouloir l'attacher a
+            # cette vignette de preview ... tu fais la meme barre de progression que celle de prod
+            # EN OUVERT" - plus de position relative a $pictureBox DU TOUT. Centree sur le
+            # FORMULAIRE PRINCIPAL, exactement comme Afficher-OverlayProgression le fait pour
+            # $overlayProgression ($form.Location est deja en coordonnees ECRAN pour un formulaire
+            # de premier niveau, pas besoin de PointToScreen ici). Recalculee a chaque tic quand
+            # meme (le formulaire principal peut etre deplace/redimensionne pendant un calcul).
+            $pointEcran = New-Object System.Drawing.Point(
+                ($form.Location.X + [int](($form.Width - $overlayApercu.Width) / 2)),
+                ($form.Location.Y + [int](($form.Height - $overlayApercu.Height) / 2))
+            )
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             # 23/10/2026, Tomyn (apres le fix du blocage) : "c'est bon mais elle est toujours ultra
@@ -7117,7 +7101,12 @@ $corpsFonctions
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(([int](($pictureBox.Width - $overlayApercu.Width) / 2)), ([int](($pictureBox.Height - $overlayApercu.Height) / 2)))))
+            # Centree sur le formulaire principal, pas sur la PictureBox - voir le commentaire dans
+            # Mettre-A-Jour-Apercu.
+            $pointEcran = New-Object System.Drawing.Point(
+                ($form.Location.X + [int](($form.Width - $overlayApercu.Width) / 2)),
+                ($form.Location.Y + [int](($form.Height - $overlayApercu.Height) / 2))
+            )
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             $nouveauLeft = $remplissageApercu.Left + 8

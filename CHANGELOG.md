@@ -7,6 +7,28 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : la carte n'est plus du tout liée à la vignette - overlay centré sur la fenêtre comme $overlayProgression, 23/10/2026
+
+Tomyn, message sans ambiguïté après plusieurs échecs successifs : "pourquoi tu t'obstines à
+vouloir l'attacher à cette p***** de vignette de preview ... tu fais la même barre de progression
+que celle de prod EN OUVERT c'est pas compliqué". Toutes les tentatives précédentes dimensionnaient
+et positionnaient la carte PAR RAPPORT à la vignette (collée dessous, centrée dessus, redimensionnée
+selon sa largeur) - exactement ce qu'il ne voulait pas.
+
+Changement complet :
+- La carte ne dépend plus de la largeur de la vignette : dimensions **exactes** de
+  `$overlayProgression` (440×192), piste 380×10 à la même position (30, 75), même police (Segoe UI
+  Semibold 12), même texte complet "Chargement de l'aperçu...".
+- Position : centrée sur **le formulaire principal**, pas sur la `PictureBox` - exactement la même
+  recette que `Afficher-OverlayProgression` (`$form.Location.X/Y + (largeur/hauteur du formulaire -
+  largeur/hauteur de la carte) / 2`). Recalculée à chaque tic au cas où le formulaire bouge.
+- Aucune dépendance restante à `$pictureBox` ou `$largeurApercu` pour la taille ou la position de
+  cette carte.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : texte du titre tronqué en plein mot ("encore pire qu'avant"), 23/10/2026
 
 Tomyn, capture d'écran après le retour au style fidèle de `$overlayProgression` : "et la barre de
