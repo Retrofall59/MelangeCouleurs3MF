@@ -3650,6 +3650,19 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # un maillage dense, pas seulement plus correct visuellement.
     $cellulesOccupees = New-Object 'System.Collections.Generic.HashSet[Int64]'
     $indicesFinaux = New-Object System.Collections.Generic.List[int]
+    # 22/10/2026, Tomyn : "peux mieux faire" meme apres le correctif FillMode (Winding) - le fond
+    # (forme + ombrage) est maintenant net, mais la texture reste GRANULEUSE (grain type "sable")
+    # sur toute la surface, pas juste en bordure. Cause : chaque cellule ne garde qu'UN SEUL
+    # triangle representant, et sur un maillage dense/bruite (sortie Tripo - normales par face tres
+    # variables meme sur une zone localement plate), l'ombrage ($ombre) de CE triangle precis peut
+    # differer fortement de celui de ses voisins immediats, purement par bruit de geometrie - d'ou
+    # un niveau de gris qui saute triangle a triangle, meme une fois le dessin (FillMode) corrige.
+    # Correctif : on accumule ici la moyenne d'ombrage de TOUS les triangles qui tombent dans une
+    # meme cellule (pas seulement celui choisi pour le dessin), et on utilisera cette moyenne au
+    # lieu de l'ombrage individuel du representant au moment de quantifier la couleur - lisse le
+    # bruit sans toucher a la geometrie ni au FillMode deja corriges.
+    $ombreSommeCellule = @{}
+    $ombreCompteCellule = @{}
     foreach ($i in $indices) {
         if ($aireEcran[$i] -le 0) { continue }
         $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
@@ -3660,6 +3673,13 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
         # suffisant pour n'importe quelle taille d'apercu realiste, meme en cas de depassement
         # leger des bords de l'image du a l'arrondi).
         $cle = ($cellX * 2000000L) + $cellY + 1000000L
+        if ($ombreSommeCellule.ContainsKey($cle)) {
+            $ombreSommeCellule[$cle] += $ombre[$i]
+            $ombreCompteCellule[$cle] += 1
+        } else {
+            $ombreSommeCellule[$cle] = $ombre[$i]
+            $ombreCompteCellule[$cle] = 1
+        }
         if ($cellulesOccupees.Add($cle)) {
             [void]$indicesFinaux.Add($i)
         }
@@ -3705,7 +3725,13 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             }
         }
         $coul = $cacheCouleurBase[$hexCouleur]
-        $niveau = [math]::Round((($ombre[$i] - 0.35) / 0.65) * ($NIVEAUX_OMBRE - 1))
+        # Ombrage lisse : moyenne de tous les triangles de la cellule (voir commentaire plus haut,
+        # correctif grain/bruit), pas seulement celui de ce triangle representant.
+        $cxCellule = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
+        $cyCellule = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
+        $cleCellule = ([int64][math]::Floor($cxCellule) * 2000000L) + [int64][math]::Floor($cyCellule) + 1000000L
+        $ombreLissee = $ombreSommeCellule[$cleCellule] / $ombreCompteCellule[$cleCellule]
+        $niveau = [math]::Round((($ombreLissee - 0.35) / 0.65) * ($NIVEAUX_OMBRE - 1))
         $oQuantifie = 0.35 + ($niveau / [double]($NIVEAUX_OMBRE - 1)) * 0.65
         $r = [int]($coul.R * $oQuantifie); $vv = [int]($coul.G * $oQuantifie); $b = [int]($coul.B * $oQuantifie)
         $cle = "$r,$vv,$b"

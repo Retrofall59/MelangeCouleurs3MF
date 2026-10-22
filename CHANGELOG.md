@@ -7,6 +7,30 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : nuage de points - grain résiduel (ombrage moyenné par cellule), 22/10/2026, soir
+
+Confirmé par Tomyn ("peux mieux faire") : le polish 0,95 n'a pas réglé le grain - forme et
+chevauchement sont bons (FillMode Winding, correctif précédent), mais la texture reste
+granuleuse/sablée sur toute la surface, pas seulement en bordure.
+
+**Cause réelle** : la sélection par grille (un seul triangle "représentant" par cellule d'écran)
+choisit bien QUEL triangle dessiner, mais utilise directement l'ombrage (`$ombre`) de CE triangle
+précis pour la couleur finale. Sur un maillage dense et bruité (sortie Tripo - normales par face
+très variables même sur une zone localement plate), deux cellules voisines peuvent tomber sur deux
+triangles dont l'ombrage diffère nettement par pur bruit de géométrie, même si la zone est
+visuellement plate - d'où le grain, indépendant du FillMode (déjà corrigé) et de la taille des
+carrés (qui ne peut rien faire contre un bruit de COULEUR, seulement contre un trou de
+GÉOMÉTRIE).
+
+**Correctif** : au lieu de l'ombrage du seul triangle représentant, on calcule la MOYENNE
+d'ombrage de TOUS les triangles qui tombent dans une même cellule (accumulée en même temps que la
+sélection, sans repasser sur le maillage) et c'est cette moyenne qui sert à quantifier la couleur
+finale - lisse le bruit sans toucher à la géométrie ni au FillMode. Pas de test visuel possible
+dans cet environnement (`System.Drawing` indisponible sur ce conteneur Linux) - à confirmer par
+Tomyn.
+
+---
+
 ## Ajustement : nuage de points - polish final (22/10/2026, soir)
 
 Confirmé par Tomyn ("peut mieux faire") : le correctif FillMode (voir entrée ci-dessous) a réglé
