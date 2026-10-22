@@ -7,6 +7,54 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Améliorations du Mélangeur après le correctif de vitesse (22/10/2026)
+
+Suite du correctif précédent (moteur C#) : Tomyn a signalé que l'appli "propose toujours le même
+trio" quel que soit le fichier. Vérifié par un test réel (exécution directe de l'algorithme de
+sélection sur les vrais chiffres loggés par Tomyn pour 4 fichiers) : **pas un bug** - 3 gagnants
+différents sur 4 fichiers (`PINK + GOLD + BLACK`, `ORANGE + BEIGE + BLACK`, `BEIGE + BLACK +
+Corail`), le trio `ORANGE + BEIGE + BLACK` gagnant simplement 2 fois sur 4 parce qu'il a
+réellement le moins de couleurs mal rendues sur ces fichiers. Cause de la confusion identifiée : le
+panneau "Avancement" liste les 124 candidats testés (triés), jamais le trio réellement appliqué -
+cette info n'existait QUE dans la popup "Trio suggéré", jamais journalisée. Cinq améliorations
+demandées par Tomyn suite à cette investigation :
+
+1. **Trio réellement appliqué désormais journalisé.** `Ecrire-Journal` logge maintenant
+   explicitement quel trio a été appliqué (`"Trio applique (meilleur de tes trios sauvegardes) :
+   ..."`, et si une meilleure combinaison du stock personnel est acceptée, une seconde ligne le
+   confirme). Un doute comme celui-ci se vérifie maintenant en 10 secondes dans l'historique.
+2. **Précision du dosage - testé et borné pour rester sûr.** Un pas plus fin (5, 2) appliqué à TOUT
+   le classement a été chronométré réellement : pas=5 multiplie par ~4 le pire cas (20 couleurs
+   personnelles, 1140 combinaisons), pas=2 dépasse largement la minute - inacceptable, risque de
+   recréer le problème de lenteur d'origine. À la place : un pas plus fin (2 au lieu de 10) est
+   appliqué en UN seul appel supplémentaire, uniquement sur le trio déjà sélectionné (dont le choix
+   reste décidé à pas=10, déjà vérifié exact) - affine juste le chiffre d'écart affiché/journalisé,
+   sans aucun risque de changer quel trio est choisi.
+3. **Recherche dans le stock personnel désormais systématique.** Avant, cette recherche ne se
+   lançait que si le meilleur trio sauvegardé laissait au moins une couleur mal rendue. Avec le
+   moteur rapide, elle est quasi gratuite (quelques secondes pour un stock normal) - elle se lance
+   maintenant toujours (si le stock a au moins 3 couleurs), pour pouvoir trouver mieux même quand
+   le trio sauvegardé est déjà correct.
+4. **Popup "Trio suggéré" affiche maintenant le top 3**, pas seulement le gagnant - pour trancher
+   soi-même entre deux trios proches plutôt que de toujours suivre la règle stricte de l'algo.
+5. **Bug "nuage de points" sur les maillages denses (Tripo) corrigé.** Cause identifiée : le seuil
+   de culling des petits triangles (nécessaire pour la vitesse) était mis à l'échelle de la TAILLE
+   de l'image d'aperçu, mais pas de la DENSITÉ du maillage - sur un maillage très dense (1,4M
+   triangles), chaque triangle est mécaniquement plus petit à l'écran pour couvrir la même surface,
+   donc une bien plus grande proportion tombe sous le seuil. Vérifié sur un vrai log Tomyn : 37% de
+   triangles dessinés sur un maillage normal (305k triangles) contre seulement 4,6% sur un maillage
+   Tripo dense (1,4M triangles) - d'où l'aspect "nuage de points". Correctif : le seuil est
+   maintenant borné pour garantir qu'au moins 15% des triangles survivent (plafonné à 250 000 dans
+   l'absolu, pour garder un temps de dessin raisonnable), sans toucher au comportement existant sur
+   les maillages normaux (déjà bien au-dessus de ce plancher, donc strictement inchangés). Testé
+   avec des données simulées reproduisant les deux cas réels : maillage normal inchangé (37% →
+   37%), maillage dense Tripo nettement amélioré (4,6% → 15%, soit ~3,3x plus de triangles
+   dessinés). Pas de rendu Windows possible pour vérifier visuellement depuis cette session
+   (`System.Drawing` n'existe pas sous Linux) - **à confirmer visuellement par Tomyn**, le seuil de
+   15%/250 000 est ajustable si encore insuffisant.
+
+---
+
 ## Correctif : "Suggérer un trio pour ce fichier..." prenait 20 à 30 minutes réelles (22/10/2026)
 
 Tomyn : clic sur "Suggérer un trio pour ce fichier..." avec un .3mf issu du pipeline Tripo de

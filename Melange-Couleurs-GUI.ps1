@@ -3628,6 +3628,35 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # reelle de l'image (largeur x hauteur) par rapport a cette reference, pour garder une densite de
     # triangles affiches comparable quelle que soit la taille demandee.
     $seuilAirePixels = 0.15 * ($largeur * $hauteur) / (300.0 * 260.0)
+
+    # 22/10/2026, Tomyn : bug "nuage de points" repris - sur les maillages TRES denses (export
+    # Tripo, ex. 1,4M triangles), ce seuil fixe (mis a l'echelle seulement sur la taille de
+    # l'IMAGE, pas sur la densite du maillage) finit par eliminer l'immense majorite des
+    # triangles : chacun d'eux est mecaniquement plus petit a l'ecran quand il y en a beaucoup
+    # plus pour couvrir la meme surface. Verifie sur un vrai log Tomyn : 111717/305253 = 37%
+    # dessines sur un maillage normal, contre seulement 66351/1429794 = 4,6% sur un maillage
+    # Tripo dense - 8x moins dense, d'ou l'aspect "nuage de points" (des trous partout) au lieu
+    # d'une surface pleine, alors que le rendu restait pourtant rapide.
+    # Correctif : on borne ce seuil pour garantir qu'au moins un PLANCHER de triangles survit,
+    # quelle que soit la densite du maillage - sans toucher au seuil existant (donc sans rien
+    # changer pour les maillages normaux, qui le depassent deja largement). Le scan pour compter
+    # combien de triangles passent le seuil actuel est une simple boucle lineaire (rapide meme a
+    # 1,4M elements) - le tri couteux (O(n log n)) n'est fait QUE si ce plancher n'est pas atteint,
+    # donc aucun cout ajoute sur le cas normal, deja bien au-dessus du plancher.
+    $totalTriangles = $aireEcran.Count
+    if ($totalTriangles -gt 0) {
+        $nombrePassantSeuilFixe = 0
+        foreach ($a in $aireEcran) { if ($a -ge $seuilAirePixels) { $nombrePassantSeuilFixe++ } }
+        $PLANCHER_COUVERTURE = 0.15
+        $PLAFOND_DESSINES_ABSOLU = 250000
+        $cibleMinimum = [Math]::Min([int]([math]::Ceiling($PLANCHER_COUVERTURE * $totalTriangles)), $PLAFOND_DESSINES_ABSOLU)
+        if ($nombrePassantSeuilFixe -lt $cibleMinimum -and $cibleMinimum -lt $totalTriangles) {
+            $airesTriees = $aireEcran.Clone()
+            [System.Array]::Sort($airesTriees)
+            $indexSeuil = [Math]::Max(0, $totalTriangles - $cibleMinimum)
+            $seuilAirePixels = $airesTriees[$indexSeuil]
+        }
+    }
     $compteurDessines = 0
 
     # Cache de la conversion couleur de base (10/10/2026, Tomyn : encore "tres long") : un maillage
@@ -5092,7 +5121,8 @@ $btnSuggererTrio.Add_Click({
             }
         }
         Ecrire-Journal "--- Suggestion de trio pour $(Split-Path $cheminAVerifier -Leaf) ($($resultatsTousLesCandidats.Count) trio(s) teste(s)) : ---"
-        foreach ($r in ($resultatsTousLesCandidats | Sort-Object MalCouvertes, Ecart)) {
+        $classementTrie = @($resultatsTousLesCandidats | Sort-Object MalCouvertes, Ecart)
+        foreach ($r in $classementTrie) {
             Ecrire-Journal ("  $($r.Nom) : $($r.MalCouvertes) mal rendue(s), ecart $([Math]::Round($r.Ecart, 3))")
         }
         if (-not $meilleurResultat) {
@@ -5102,54 +5132,86 @@ $btnSuggererTrio.Add_Click({
         # Applique directement le trio gagnant (declenche Mettre-A-Jour-ApercuTrioSelectionne via
         # SelectedIndexChanged) - pas besoin d'un second clic "Appliquer" separe.
         if ($menuTrio.Items.Contains($meilleurNom)) { $menuTrio.SelectedItem = $meilleurNom }
-        $messageResultat = "Trio applique : $meilleurNom`r`n`r`nEcart Lab moyen sur ce fichier : $([Math]::Round($meilleurResultat.EcartMoyen, 1))`r`n$($meilleurResultat.NombreMalCouvertes) couleur(s) sur $($meilleurResultat.NombreCouleurs) risquent d'etre visiblement mal rendues."
+
+        # 22/10/2026, Tomyn a cru que l'appli proposait "toujours le meme trio" d'un fichier a
+        # l'autre - verifie FAUX avec ses propres donnees reelles (3 gagnants differents sur 4
+        # fichiers testes), mais impossible a confirmer avant : le panneau Avancement montre le
+        # CLASSEMENT teste, jamais le trio reellement retenu (affiche uniquement dans la popup
+        # "Trio suggere" plus bas, jamais journalise). On journalise maintenant explicitement le
+        # trio APPLIQUE, pour qu'un doute pareil se verifie en 10 secondes dans l'historique au
+        # lieu d'une heure de calcul a la main.
+        Ecrire-Journal "Trio applique (meilleur de tes trios sauvegardes) : $meilleurNom - $($meilleurResultat.NombreMalCouvertes) mal rendue(s), ecart $([Math]::Round($meilleurResultat.EcartMoyen, 3))"
+
+        # 22/10/2026, Tomyn : augmenter la precision du dosage. Un pas plus fin (5, 2...) sur TOUT
+        # le classement a ete teste et chronometre reellement : pas=5 multiplie par ~4 le temps du
+        # pire cas (20 couleurs perso), et pas=2 depasse largement la minute - inacceptable, et
+        # risque de retomber dans le probleme du debut de session. En revanche, affiner le dosage
+        # du SEUL trio deja choisi (pas=2 au lieu de 10) ne coute qu'UN appel supplementaire, pas
+        # 124 ni 1140 : cout negligeable (quelques diziemes de seconde), et AUCUN risque de
+        # changer quel trio est choisi puisque la selection ci-dessus reste a pas=10 (deja verifiee
+        # exacte) - seul le chiffre affiche/journalise pour le gagnant devient plus precis.
+        $resultatAffine = Verifier-CouvertureRapide $couleursFichier $TRIOS[$meilleurNom] 2
+        if ($resultatAffine) { $meilleurResultat = $resultatAffine }
+
+        # 22/10/2026, Tomyn : comparer systematiquement avec le stock de couleurs individuelles,
+        # plus seulement quand le meilleur trio sauvegarde laisse une couleur mal rendue. Avec le
+        # moteur rapide, cette recherche est maintenant quasi gratuite (quelques secondes au pire
+        # pour un stock normal, voir Obtenir-MeilleureComboDepuisCouleursPourFichier) : elle peut
+        # aussi trouver mieux qu'un trio deja correct, pas seulement "sauver" un mauvais trio.
+        $meilleureComboStock = $null
+        if ($script:MesCouleurs.Count -ge 3) {
+            # 22/10/2026 : message avant la recherche (voir le commentaire dans
+            # Obtenir-MeilleureComboDepuisCouleursPourFichier) - cette recherche peut prendre du
+            # temps avec beaucoup de couleurs personnelles ; sans ce message, rien ne distingue
+            # "l'appli travaille encore" de "l'appli a plante" tant que la fenetre reste figee.
+            Ecrire-Journal "  Recherche de la meilleure combinaison parmi tes $($script:MesCouleurs.Count) couleur(s) personnelle(s)..."
+            $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
+        }
+        # 17/10/2026 : "mieux" se juge d'abord sur le nombre de couleurs mal rendues (le plus
+        # bas gagne), et seulement a egalite sur la moyenne - memes raisons que dans
+        # Obtenir-MeilleureComboDepuisCouleursPourFichier ci-dessus (une couleur ratee pese
+        # plus, a l'oeil, qu'un dixieme d'ecart moyen gagne sur les autres). Comparaison faite au
+        # meme pas (10) des deux cotes, avant l'affinage ci-dessus, pour ne pas biaiser le match.
+        $comboEstMeilleure = $meilleureComboStock -and (
+            ($meilleureComboStock.Resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
+            (($meilleureComboStock.Resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($meilleureComboStock.Resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
+        )
+
+        # 22/10/2026, Tomyn : au lieu d'annoncer juste le gagnant, afficher le top 3 pour qu'il
+        # puisse trancher lui-meme si deux trios sont proches (l'algo tranche toujours sur le
+        # nombre de mal rendues en premier, mais a l'oeil Tomyn peut parfois preferer l'autre).
+        $top3 = @($classementTrie | Select-Object -First 3)
+        $texteTop3 = ($top3 | ForEach-Object { "  $($_.Nom) : $($_.MalCouvertes) mal rendue(s), ecart $([Math]::Round($_.Ecart, 1))" }) -join "`r`n"
+
+        $messageResultat = "Trio applique : $meilleurNom`r`n`r`nEcart Lab moyen sur ce fichier : $([Math]::Round($meilleurResultat.EcartMoyen, 1))`r`n$($meilleurResultat.NombreMalCouvertes) couleur(s) sur $($meilleurResultat.NombreCouleurs) risquent d'etre visiblement mal rendues.`r`n`r`nTop 3 des trios sauvegardes testes :`r`n$texteTop3"
         # 17/10/2026, Tomyn : cas reel (fichier avec du vert olive) ou le trio applique ici laissait
         # UNE couleur largement hors cible alors que la MOYENNE des 4 couleurs du fichier restait
-        # bonne (diluee par les 3 autres, bien couvertes) - la recherche elargie ci-dessous ne se
-        # declenchait donc jamais, et cette couleur etait "zappee" en silence, sans le moindre
-        # avertissement ("Toutes les couleurs sont bien couvertes" affiche a tort). Le declencheur
-        # n'est plus seulement "moyenne > 12" : il suffit maintenant qu'UNE SEULE couleur du fichier
-        # soit mal rendue (NombreMalCouvertes > 0, meme calcul que le rapport de couverture) pour
-        # aller chercher une meilleure combinaison, meme si la moyenne globale semble correcte.
+        # bonne (diluee par les 3 autres, bien couvertes) - avertissement affiche des qu'UNE SEULE
+        # couleur du fichier est mal rendue (NombreMalCouvertes > 0), pas seulement si la moyenne
+        # globale depasse 12.
         if ($meilleurResultat.EcartMoyen -gt 12.0 -or $meilleurResultat.NombreMalCouvertes -gt 0) {
             if ($meilleurResultat.EcartMoyen -gt 12.0) {
                 $messageResultat += "`r`n`r`nMeme le meilleur de tes trios reste moyen sur ce fichier (ecart > 12)."
             } else {
                 $messageResultat += "`r`n`r`nLa moyenne est correcte, mais $($meilleurResultat.NombreMalCouvertes) couleur(s) sur $($meilleurResultat.NombreCouleurs) restent mal rendues avec ce trio."
             }
-            # Le trio sauvegarde choisi laisse au moins une couleur mal rendue (moyenne bonne ou pas) -
-            # avant de conclure qu'il faut en racheter, on cherche aussi dans le stock de couleurs
-            # individuelles (12/10/2026, Tomyn : "s'il trouve pas le trio adequat ... propose ca ca et
-            # la ca marche") une combinaison de 3 qui ferait mieux, meme si elle n'a jamais ete
-            # sauvegardee comme trio.
-            if ($script:MesCouleurs.Count -ge 3) {
-                # 22/10/2026 : message avant la recherche (voir le commentaire dans
-                # Obtenir-MeilleureComboDepuisCouleursPourFichier) - cette recherche peut prendre du
-                # temps avec beaucoup de couleurs personnelles ; sans ce message, rien ne distingue
-                # "l'appli travaille encore" de "l'appli a plante" tant que la fenetre reste figee.
-                Ecrire-Journal "  Recherche de la meilleure combinaison parmi tes $($script:MesCouleurs.Count) couleur(s) personnelle(s)..."
-                $meilleureComboStock = Obtenir-MeilleureComboDepuisCouleursPourFichier $couleursFichier $script:MesCouleurs
-                # 17/10/2026 : "mieux" se juge d'abord sur le nombre de couleurs mal rendues (le plus
-                # bas gagne), et seulement a egalite sur la moyenne - memes raisons que dans
-                # Obtenir-MeilleureComboDepuisCouleursPourFichier ci-dessus (une couleur ratee pese
-                # plus, a l'oeil, qu'un dixieme d'ecart moyen gagne sur les autres).
-                $comboEstMeilleure = $meilleureComboStock -and (
-                    ($meilleureComboStock.Resultat.NombreMalCouvertes -lt $meilleurResultat.NombreMalCouvertes) -or
-                    (($meilleureComboStock.Resultat.NombreMalCouvertes -eq $meilleurResultat.NombreMalCouvertes) -and ($meilleureComboStock.Resultat.EcartMoyen -lt $meilleurResultat.EcartMoyen))
-                )
-                if ($comboEstMeilleure) {
-                    $nomsComboStock = ($meilleureComboStock.Composants | ForEach-Object { $_.Nom }) -join " + "
-                    $messageResultat += "`r`n`r`nEn revanche, dans tes couleurs individuelles (Gerer mes couleurs...), la combinaison '$nomsComboStock' ferait mieux : $($meilleureComboStock.Resultat.NombreMalCouvertes) couleur(s) mal rendue(s) (ecart moyen $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 1))) au lieu de $($meilleurResultat.NombreMalCouvertes) (ecart moyen $([Math]::Round($meilleurResultat.EcartMoyen, 1)))."
-                    Afficher-Boite $messageResultat "Trio suggere" "OK" "Info" | Out-Null
-                    if ((Afficher-Boite "Veux-tu l'enregistrer comme nouveau trio et l'appliquer tout de suite ?" "Nouvelle combinaison trouvee" "YesNo" "Question") -eq [System.Windows.Forms.DialogResult]::Yes) {
-                        $nomSauvegarde = Demander-NomEtSauvegarderTrio $form $meilleureComboStock.Composants
-                        if ($nomSauvegarde -and $menuTrio.Items.Contains($nomSauvegarde)) { $menuTrio.SelectedItem = $nomSauvegarde }
-                    }
-                    return
-                }
+        }
+        if ($script:MesCouleurs.Count -lt 3) {
+            $messageResultat += "`r`n`r`nTu peux aussi entrer tes couleurs une par une dans 'Gerer mes couleurs...' pour que l'outil cherche directement une meilleure combinaison dedans."
+        }
+
+        if ($comboEstMeilleure) {
+            $nomsComboStock = ($meilleureComboStock.Composants | ForEach-Object { $_.Nom }) -join " + "
+            $messageResultat += "`r`n`r`nEn revanche, dans tes couleurs individuelles (Gerer mes couleurs...), la combinaison '$nomsComboStock' ferait mieux : $($meilleureComboStock.Resultat.NombreMalCouvertes) couleur(s) mal rendue(s) (ecart moyen $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 1))) au lieu de $($meilleurResultat.NombreMalCouvertes) (ecart moyen $([Math]::Round($meilleurResultat.EcartMoyen, 1)))."
+            Afficher-Boite $messageResultat "Trio suggere" "OK" "Info" | Out-Null
+            if ((Afficher-Boite "Veux-tu l'enregistrer comme nouveau trio et l'appliquer tout de suite ?" "Nouvelle combinaison trouvee" "YesNo" "Question") -eq [System.Windows.Forms.DialogResult]::Yes) {
+                $nomSauvegarde = Demander-NomEtSauvegarderTrio $form $meilleureComboStock.Composants
+                if ($nomSauvegarde -and $menuTrio.Items.Contains($nomSauvegarde)) { $menuTrio.SelectedItem = $nomSauvegarde }
+                Ecrire-Journal "Trio applique (nouvelle combinaison depuis tes couleurs personnelles) : $nomsComboStock - $($meilleureComboStock.Resultat.NombreMalCouvertes) mal rendue(s), ecart $([Math]::Round($meilleureComboStock.Resultat.EcartMoyen, 3))"
             } else {
-                $messageResultat += "`r`n`r`nTu peux aussi entrer tes couleurs une par une dans 'Gerer mes couleurs...' pour que l'outil cherche directement une meilleure combinaison dedans."
+                Ecrire-Journal "Trio applique (confirme malgre une meilleure combinaison trouvee, refus de l'enregistrer) : $meilleurNom"
             }
+            return
         }
         Afficher-Boite $messageResultat "Trio suggere" "OK" "Info" | Out-Null
     } catch {
