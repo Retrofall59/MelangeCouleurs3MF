@@ -7,6 +7,19 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Diagnostic v2 : le premier diagnostic était lui-même invisible, 23/10/2026
+
+Tomyn a renvoyé le journal complet d'un chargement (52,7s de dessin, ~263 tics de minuteur) : AUCUNE
+ligne "DIAGNOSTIC" dedans. Le premier diagnostic ajouté était imbriqué DANS le `if ($overlayApercu)`
+— s'il ne s'affiche jamais, ça veut déjà dire quelque chose : `$overlayApercu` est `$null`.
+
+Diagnostic rendu INCONDITIONNEL (hors du `if`, dès le début de la fonction, pas dans le minuteur) :
+s'affiche à coup sûr, "TROUVE" ou "NULL" — et si NULL, liste TOUTES les clés réellement présentes
+dans le hashtable partagé à ce moment-là, pour voir si la clé attendue est juste absente, mal
+orthographiée, ou si c'est le hashtable entier qui n'est pas le bon.
+
+---
+
 ## Diagnostic (plus une hypothèse à l'aveugle) : barre de progression, 23/10/2026
 
 Tomyn : "toujours non visible" même après le fix sur l'ordre d'exécution (ShowDialog/Maximized).

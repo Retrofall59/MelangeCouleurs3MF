@@ -6822,6 +6822,11 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     $diagnosticBarreEcrit = $false
     $overlayApercu = $etatPartage["__ProgressOverlay_$cle__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
+    # 23/10/2026 : diagnostic INCONDITIONNEL (le precedent etait imbrique dans le "if" plus bas, donc
+    # totalement absent du journal si $overlayApercu est null - ce qui etait justement en train de se
+    # passer, le journal envoye par Tomyn ne contenait AUCUNE ligne DIAGNOSTIC malgre 263 tics sur un
+    # calcul de 52,7s). Celui-ci s'affiche a coup sur, qu'il soit trouve ou pas.
+    Ecrire-Journal ("DIAGNOSTIC barre (case '$cle') : overlayApercu = " + $(if ($overlayApercu) { "TROUVE" } else { "NULL - cle '__ProgressOverlay_${cle}__' absente de etatPartage (" + $etatPartage.Count + " cles au total : " + ($etatPartage.Keys -join ", ") + ")" }))
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
         $overlayApercu.Show()
@@ -7027,6 +7032,7 @@ $corpsFonctions
     $diagnosticBarreEcrit = $false
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_$cle__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
+    Ecrire-Journal ("DIAGNOSTIC barre (case '$cle', rotation) : overlayApercu = " + $(if ($overlayApercu) { "TROUVE" } else { "NULL - cle '__ProgressOverlay_${cle}__' absente de script:ApercuEtat (" + $script:ApercuEtat.Count + " cles au total : " + ($script:ApercuEtat.Keys -join ", ") + ")" }))
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
         $overlayApercu.Show()
