@@ -7,6 +7,22 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : texte du titre tronqué en plein mot ("encore pire qu'avant"), 23/10/2026
+
+Tomyn, capture d'écran après le retour au style fidèle de `$overlayProgression` : "et la barre de
+progression et encore pire quavant". La capture montre un vrai bug visuel, pas une question de
+goût : le titre s'affichait "Chargement de l'aperc..." - coupé en plein milieu d'un mot.
+
+Cause directe : la carte fait 65% de la largeur de la vignette (195px avec `$largeurApercu = 300`),
+nettement plus étroite que les 440px de `$overlayProgression` d'origine, mais le texte
+("Chargement de l'apercu...") n'avait pas été raccourci en conséquence - `AutoEllipsis` tronquait
+donc le texte pour qu'il tienne, en plein mot. Texte remplacé par "Chargement..." - tient
+confortablement à cette largeur, quelle que soit la taille de vignette.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : retour à une copie fidèle de $overlayProgression (pas de réinvention), 23/10/2026
 
 Tomyn a coupé court avant même de tester le style "minimal fond clair" annoncé dans l'entrée

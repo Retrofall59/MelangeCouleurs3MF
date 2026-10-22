@@ -6631,7 +6631,11 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     $overlay.BackColor = $THEME.FondBanniere
 
     $labelTitre = New-Object System.Windows.Forms.Label
-    $labelTitre.Text = "Chargement de l'apercu..."
+    # 23/10/2026, Tomyn, capture d'ecran : le texte etait tronque EN PLEIN MOT ("Chargement de
+    # l'aperc...") - la carte (65% de la largeur de la vignette, bien plus etroite que les 440px de
+    # $overlayProgression) est trop etroite pour ce texte a cette taille de police. Raccourci pour
+    # tenir sans troncature quelle que soit la largeur de vignette.
+    $labelTitre.Text = "Chargement..."
     $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
     $labelTitre.ForeColor = [System.Drawing.Color]::White
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
