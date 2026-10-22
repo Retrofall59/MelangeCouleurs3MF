@@ -7,6 +7,30 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : abandon du gros bloc coloré, barre minimale fond clair ("style Windows flashy"), 23/10/2026
+
+Après plusieurs allers-retours sur la forme (collée/flottante, carrée/arrondie, pleine largeur/
+centrée) sans régler le problème, question posée directement à Tomyn : "qu'est-ce qui est
+précisément moche ?". Réponse : "la bare en general est moche ce carre orange ce carre bleu
+arondi cest ultra moche style windows flashy".
+
+Le problème n'était donc ni la forme ni la position : c'est la **densité de couleur saturée**. Un
+gros bloc plein violet avec un bloc orange dedans, posé cru sur fond blanc, lit comme un pavé
+façon vieux Windows plutôt qu'un élément discret - peu importe les coins arrondis ou le centrage.
+
+Abandon complet du bloc plein coloré :
+- Plus de fond violet saturé - fond clair (`$THEME.Surface`, blanc/gris très clair), quasi
+  invisible sur la vignette blanche.
+- Plus de gros bloc épais - une fine barre "pilule" de 4px de haut, bouts totalement arrondis,
+  piste gris très clair avec un segment orange qui glisse dedans (beaucoup moins de surface
+  colorée à l'écran).
+- Texte "Chargement..." en gris discret au-dessus (plus de blanc en gras sur fond saturé).
+- Carte réduite d'autant (56 → 30px de haut, 72% → 50% de la largeur de la vignette).
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : carte flottante centrée sur la vignette, pas pleine largeur collée dessous ("toujours ultra moche", 3e capture), 23/10/2026
 
 Tomyn, 3e capture d'écran de suite : "toujours ultra moche" - malgré les coins arrondis et la

@@ -6599,15 +6599,19 @@ function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$r
 }
 
 function Creer-CarteProgressionApercu([int]$largeurDisponible) {
-    # 23/10/2026, Tomyn, 3e capture d'ecran de suite : "toujours ultra moche" meme avec coins
-    # arrondis et marge - le vrai ecart restant, visible sur cette capture, c'est que la carte fait
-    # TOUTE la largeur de la vignette, collee en bande plate dessous. $overlayProgression n'est PAS
-    # pleine largeur : c'est une carte plus etroite que son conteneur, qui FLOTTE au milieu -
-    # vraiment un "popup", pas une barre d'etat. Reprise ici en MOINS large que la vignette (72%,
-    # centree) et CENTREE SUR la vignette elle-meme (zone blanche, vide pendant le chargement) au
-    # lieu d'etre accrochee dessous - plus proche du vrai comportement d'un popup flottant.
-    $largeurCarte = [Math]::Max(170, [int]($largeurDisponible * 0.72))
-    $hauteurCarte = 56
+    # 23/10/2026, Tomyn, apres plusieurs allers-retours sur la FORME (collee/flottante, carree/
+    # arrondie, pleine largeur/centree) sans jamais regler le probleme - question directe posee
+    # ("qu'est-ce qui est precisement moche ?"), reponse : "la bare en general est moche ce carre
+    # orange ce carre bleu arondi cest ultra moche style windows flashy". Le probleme n'etait donc
+    # ni la forme ni la position : c'est le DENSITE DE COULEUR - un gros bloc plein violet sature
+    # avec un bloc orange sature dedans, pose cru sur fond blanc, lit comme un gros pave "Windows
+    # XP" plutot qu'un element discret. Abandon complet du bloc plein : plus de fond violet sature
+    # (fond clair $THEME.Surface, presque invisible sur la vignette blanche), plus de bloc epais -
+    # une fine barre "pilule" (4px, bouts totalement arrondis) en gris clair avec un segment orange
+    # qui glisse dedans, et un petit texte gris discret au-dessus (pas blanc en gras sur fond
+    # colore). Beaucoup moins de surface de couleur saturee a l'ecran.
+    $largeurCarte = [Math]::Max(140, [int]($largeurDisponible * 0.5))
+    $hauteurCarte = 30
     $overlay = New-Object System.Windows.Forms.Form
     $overlay.FormBorderStyle = "None"
     $overlay.ShowInTaskbar = $false
@@ -6617,30 +6621,33 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     # hauteur minimale de fenetre (~39px) meme avec FormBorderStyle=None.
     $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
     $overlay.Size = New-Object System.Drawing.Size($largeurCarte, $hauteurCarte)
-    $overlay.BackColor = $THEME.FondBanniere
-    Definir-RegionArrondie $overlay 10
+    $overlay.BackColor = $THEME.Surface
+    Definir-RegionArrondie $overlay 6
 
     $labelTitre = New-Object System.Windows.Forms.Label
     $labelTitre.Text = "Chargement..."
-    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-    $labelTitre.ForeColor = [System.Drawing.Color]::White
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $labelTitre.ForeColor = $THEME.TexteSecondaire
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
     $labelTitre.TextAlign = "MiddleCenter"
-    $labelTitre.Location = New-Object System.Drawing.Point(10, 8)
-    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 20), 20)
+    $labelTitre.Location = New-Object System.Drawing.Point(8, 4)
+    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 16), 14)
     $overlay.Controls.Add($labelTitre)
 
+    $hauteurPiste = 4
     $piste = New-Object System.Windows.Forms.Panel
-    $piste.Location = New-Object System.Drawing.Point(14, 36)
-    $piste.Size = New-Object System.Drawing.Size(($largeurCarte - 28), 8)
-    $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+    $piste.Location = New-Object System.Drawing.Point(8, 20)
+    $piste.Size = New-Object System.Drawing.Size(($largeurCarte - 16), $hauteurPiste)
+    $piste.BackColor = [System.Drawing.Color]::FromArgb(0xE4, 0xE0, 0xEE)
+    Definir-RegionArrondie $piste ([int]($hauteurPiste / 2))
     $overlay.Controls.Add($piste)
 
-    $largeurRemplissage = [Math]::Max(26, [int](($largeurCarte - 28) * 0.28))
+    $largeurRemplissage = [Math]::Max(22, [int](($largeurCarte - 16) * 0.3))
     $remplissage = New-Object System.Windows.Forms.Panel
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
-    $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 8)
+    $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, $hauteurPiste)
     $remplissage.BackColor = $THEME.AccentChaud
+    Definir-RegionArrondie $remplissage ([int]($hauteurPiste / 2))
     $piste.Controls.Add($remplissage)
 
     [PSCustomObject]@{ Overlay = $overlay; Piste = $piste; Remplissage = $remplissage }
