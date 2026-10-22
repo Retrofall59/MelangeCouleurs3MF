@@ -6494,13 +6494,13 @@ function Ajouter-BoutonsRotationApercu([System.Windows.Forms.Form]$formulaire, [
                 # Desactive au repos - rien a arreter. Active par les trois fonctions qui lancent un
                 # calcul en arriere-plan (elles le desactivent elles-memes a la fin, succes ou echec).
                 $btn.Enabled = $false
-                $etatPartage["__BoutonStop_$cle__"] = $btn
+                $etatPartage["__BoutonStop_${cle}__"] = $btn
                 $btn.Add_Click({
                     # Perime le resultat a venir (le Timer qui le recupere verra $estPerime = vrai et
                     # n'affichera rien) AVANT de demander l'arret - sinon un resultat qui arrive juste
                     # entre les deux lignes pourrait encore s'afficher.
                     $pictureBox.Tag = ([int]$pictureBox.Tag) + 1
-                    $psActif = $etatPartage["__PSActif_$cle__"]
+                    $psActif = $etatPartage["__PSActif_${cle}__"]
                     if ($psActif) {
                         try { [void]$psActif.BeginStop($null, $null) } catch { }
                     }
@@ -6804,8 +6804,8 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # Pour le bouton "Stop" (10/10/2026, Tomyn : "go les amelio") - range l'instance PowerShell
     # en cours dans le hashtable partage pour que le clic sur "Stop" puisse l'arreter (BeginStop),
     # et active ce bouton pendant le calcul (desactive dans le "finally" plus bas).
-    $etatPartage["__PSActif_$cle__"] = $ps
-    $boutonStop = $etatPartage["__BoutonStop_$cle__"]
+    $etatPartage["__PSActif_${cle}__"] = $ps
+    $boutonStop = $etatPartage["__BoutonStop_${cle}__"]
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
     # 22/10/2026, Tomyn : "barre de progression de generation previews" - voir le commentaire detaille
@@ -6820,8 +6820,8 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # du hashtable partage pour un etat qui ne sert qu'a CE minuteur.
     $directionBarre = 1
     $diagnosticBarreEcrit = $false
-    $overlayApercu = $etatPartage["__ProgressOverlay_$cle__"]
-    $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
+    $overlayApercu = $etatPartage["__ProgressOverlay_${cle}__"]
+    $remplissageApercu = $etatPartage["__ProgressRemplissage_${cle}__"]
     # 23/10/2026 : diagnostic INCONDITIONNEL (le precedent etait imbrique dans le "if" plus bas, donc
     # totalement absent du journal si $overlayApercu est null - ce qui etait justement en train de se
     # passer, le journal envoye par Tomyn ne contenait AUCUNE ligne DIAGNOSTIC malgre 263 tics sur un
@@ -6918,7 +6918,7 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
                     AngleXPrecedent  = $resultat.AngleXChoisi
                 }
                 Enregistrer-AngleFichier $chemin3mf $resultat.AngleYChoisi $resultat.AngleXChoisi
-                $labelAngle = $etatPartage["__Label_$cle__"]
+                $labelAngle = $etatPartage["__Label_${cle}__"]
                 if ($labelAngle) { $labelAngle.Text = "Rotation : {0:N0} deg  /  Inclinaison : {1:N0} deg" -f $resultat.AngleYChoisi, $resultat.AngleXChoisi }
                 Ecrire-Journal ("Apercu : lecture {0:N1} s + angle {1:N1} s + dessin {2:N1} s ({3} triangles, {4} dessines en {5} groupe(s), rotation {6} deg, inclinaison {7} deg)" -f $resultat.DureeLecture, $resultat.DureeAngle, $resultat.DureeDessin, $resultat.NombreTriangles, $resultat.NombreDessines, $resultat.NombreGroupes, $resultat.AngleYChoisi, $resultat.AngleXChoisi)
             } elseif ($image) {
@@ -6962,8 +6962,8 @@ function Redessiner-Apercu-AvecRotation([System.Windows.Forms.PictureBox]$pictur
     }
     # Capture AVANT le Timer (lecture simple, hors closure, donc $script: est sans risque ici) -
     # sert a mettre a jour l'affichage "Rotation : ... / Inclinaison : ..." une fois le redessin fini.
-    $labelAngle = $script:ApercuEtat["__Label_$cle__"]
-    $boutonStop = $script:ApercuEtat["__BoutonStop_$cle__"]
+    $labelAngle = $script:ApercuEtat["__Label_${cle}__"]
+    $boutonStop = $script:ApercuEtat["__BoutonStop_${cle}__"]
 
     # Historique a un seul niveau pour "Defaire" (10/10/2026, Tomyn : "go les amelio") - memorise
     # l'angle d'AVANT ce changement precis. Ecrase a chaque rotation (manuelle, "Auto" qui reapplique
@@ -7016,7 +7016,7 @@ $corpsFonctions
     [void]$ps.AddArgument($nouvelAngleY)
     [void]$ps.AddArgument($nouvelAngleX)
 
-    $script:ApercuEtat["__PSActif_$cle__"] = $ps
+    $script:ApercuEtat["__PSActif_${cle}__"] = $ps
     if ($boutonStop) { $boutonStop.Enabled = $true }
 
     # Meme fenetre-overlay indeterminee que Mettre-A-Jour-Apercu (voir son commentaire pour le
@@ -7030,8 +7030,8 @@ $corpsFonctions
     # haut pres de la creation de $script:ApercuEtat).
     $directionBarre = 1
     $diagnosticBarreEcrit = $false
-    $overlayApercu = $script:ApercuEtat["__ProgressOverlay_$cle__"]
-    $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
+    $overlayApercu = $script:ApercuEtat["__ProgressOverlay_${cle}__"]
+    $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_${cle}__"]
     Ecrire-Journal ("DIAGNOSTIC barre (case '$cle', rotation) : overlayApercu = " + $(if ($overlayApercu) { "TROUVE" } else { "NULL - cle '__ProgressOverlay_${cle}__' absente de script:ApercuEtat (" + $script:ApercuEtat.Count + " cles au total : " + ($script:ApercuEtat.Keys -join ", ") + ")" }))
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
@@ -7165,8 +7165,8 @@ foreach (`$a in `$args[1]) {
     [void]$ps.AddArgument($largeurVignette)
     [void]$ps.AddArgument($hauteurVignette)
 
-    $etatPartage["__PSActif_$cle__"] = $ps
-    $boutonStopAvantTick = $etatPartage["__BoutonStop_$cle__"]
+    $etatPartage["__PSActif_${cle}__"] = $ps
+    $boutonStopAvantTick = $etatPartage["__BoutonStop_${cle}__"]
     if ($boutonStopAvantTick) { $boutonStopAvantTick.Enabled = $true }
 
     $resultatAsync = $ps.BeginInvoke()

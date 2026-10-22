@@ -7,6 +7,36 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix (confirmé par test direct) : vraie cause de la barre invisible - bug d'interpolation PowerShell, 23/10/2026
+
+Le diagnostic inconditionnel a payé immédiatement : `overlayApercu = NULL`, alors que la clé
+`__ProgressOverlay_avant__` apparaissait bien, telle quelle, dans la liste des clés du hashtable
+juste à côté. La clé existe, mais la LECTURE ne la trouve pas - ça ne pouvait être qu'un problème
+de construction de la chaîne de recherche elle-même.
+
+Cause, confirmée par test direct dans cet environnement :
+
+    $cle = "avant"
+    "__ProgressOverlay_$cle__"   -> "__ProgressOverlay_"          (FAUX)
+    "__ProgressOverlay_${cle}__" -> "__ProgressOverlay_avant__"   (correct)
+
+En PowerShell, `_` fait partie des caractères valides d'un nom de variable - dans une chaîne
+interpolée, `$cle__` est donc lu comme UNE SEULE variable nommée `cle__` (inexistante, donc vide),
+pas comme `$cle` suivi du texte littéral `__`. Repéré ce bug dans TOUT le fichier : 14 occurrences
+du même piège (`"__PSActif_$cle__"`, `"__BoutonStop_$cle__"`, `"__Label_$cle__"`,
+`"__ProgressOverlay_$cle__"`, `"__ProgressRemplissage_$cle__"`), présent depuis bien avant cette
+session (le bouton Stop et le label d'angle du 10/10/2026 l'avaient déjà) - ce qui explique
+D'AUTRES symptômes jamais identifiés comme liés jusqu'ici : la capture d'écran envoyée par Tomyn
+montrait "Rotation : -- / Inclinaison : --" alors que le journal, juste à côté, affichait bien
+"rotation 315 deg" - le label ne s'est simplement jamais mis à jour, exactement par ce bug
+(`$labelAngle = $etatPartage["__Label_$cle__"]` ne trouvait jamais le contrôle).
+
+Toutes les 14 occurrences remplacées par `${cle}__` (accolades autour du nom de variable, syntaxe
+PowerShell standard pour ce cas). Recherche systématique du même motif sur tout le fichier
+(`$cle__` et toute variante `$xxx__`) : plus aucune occurrence restante après correction.
+
+---
+
 ## Diagnostic v2 : le premier diagnostic était lui-même invisible, 23/10/2026
 
 Tomyn a renvoyé le journal complet d'un chargement (52,7s de dessin, ~263 tics de minuteur) : AUCUNE
