@@ -6582,6 +6582,12 @@ $overlayApercuAvant.FormBorderStyle = "None"
 $overlayApercuAvant.ShowInTaskbar = $false
 $overlayApercuAvant.TopMost = $true
 $overlayApercuAvant.StartPosition = "Manual"
+# 23/10/2026, Tomyn : "ultra moche" - diagnostic confirme (taille reelle 300x39 au lieu des 300x6
+# demandes) : meme avec FormBorderStyle=None, Windows impose une hauteur MINIMALE de fenetre
+# (environ 39px, la hauteur minimale systeme classique) tant que MinimumSize n'est pas explicitement
+# mise a zero - d'ou un gros bloc epais avec le petit filet orange de 6px perdu dans le coin,
+# au lieu d'une fine bande nette. Corrige en mettant MinimumSize a (0,0) AVANT Size.
+$overlayApercuAvant.MinimumSize = New-Object System.Drawing.Size(0, 0)
 $overlayApercuAvant.Size = New-Object System.Drawing.Size($largeurApercu, 6)
 $overlayApercuAvant.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $remplissageApercuAvant = New-Object System.Windows.Forms.Panel
@@ -6649,6 +6655,8 @@ $overlayApercuApres.FormBorderStyle = "None"
 $overlayApercuApres.ShowInTaskbar = $false
 $overlayApercuApres.TopMost = $true
 $overlayApercuApres.StartPosition = "Manual"
+# Meme correctif MinimumSize que $overlayApercuAvant plus haut (voir son commentaire).
+$overlayApercuApres.MinimumSize = New-Object System.Drawing.Size(0, 0)
 $overlayApercuApres.Size = New-Object System.Drawing.Size($largeurApercu, 6)
 $overlayApercuApres.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
 $remplissageApercuApres = New-Object System.Windows.Forms.Panel

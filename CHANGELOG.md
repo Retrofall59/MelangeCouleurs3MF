@@ -7,6 +7,28 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : "ultra moche" + confirmation que la barre ne se ferme PAS trop tôt, 23/10/2026
+
+Le diagnostic a payé une 2e fois. Tomyn renvoie le journal complet d'un chargement de 84,2s
+(lecture 29,4s + dessin 54,8s) : 388 lignes DIAGNOSTIC, Visible=True sur TOUTE la durée, jusqu'à la
+toute dernière ligne juste avant "Apercu : lecture... dessin...". **Confirmé par les logs : la
+barre ne se ferme pas trop tôt** — elle est restée affichée pendant tout le calcul. Le "se finit
+très vite" de Tomyn décrivait donc l'ANIMATION (chaque aller simple du va-et-vient ne prend que
+4,8s sur une piste de 300px à 10px/tic, largement plus court que les 84s totales) plutôt qu'une
+fermeture prématurée réelle.
+
+En revanche, le diagnostic révèle la vraie cause de "ultra moche" : **taille réelle 300x39**, alors
+que 300x6 avait été demandé. Même avec `FormBorderStyle=None`, Windows impose une hauteur MINIMALE
+de fenêtre (~39px, la hauteur minimale système classique) tant que `MinimumSize` n'est pas
+explicitement mise à (0,0) - d'où un gros bloc épais sombre avec le petit filet orange de 6px perdu
+dans un coin, au lieu d'une fine bande nette. `MinimumSize` mise à (0,0) avant `Size` sur les deux
+fenêtres-overlay - devrait donner la vraie bande fine de 6px attendue.
+
+Diagnostic laissé actif pour confirmer que la taille devient bien 300x6 sur le prochain test, à
+retirer une fois confirmé.
+
+---
+
 ## Fix (confirmé par test direct) : vraie cause de la barre invisible - bug d'interpolation PowerShell, 23/10/2026
 
 Le diagnostic inconditionnel a payé immédiatement : `overlayApercu = NULL`, alors que la clé
