@@ -7,6 +7,33 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : retour à une copie fidèle de $overlayProgression (pas de réinvention), 23/10/2026
+
+Tomyn a coupé court avant même de tester le style "minimal fond clair" annoncé dans l'entrée
+précédente : "non ca va etre encore plus moche pk tu prend le style de la bazre de prod en
+overlay" - retour explicite à l'demande initiale : reprendre le style exact de
+`$overlayProgression`, pas une interprétation personnelle.
+
+Vérification faite directement sur le **code** de `$overlayProgression` : aucun arrondi n'y est
+appliqué explicitement (pas de `Region`, pas de `GraphicsPath`) - donc la carte de progression
+preview n'en applique plus non plus, pour coller à la recette réelle plutôt qu'à une supposition
+visuelle. Repris : fond violet plein (`$THEME.FondBanniere`), titre blanc en gras centré (Segoe UI
+Semibold), piste et remplissage en rectangles simples (pas de "pilule" arrondie), mêmes
+proportions relatives que prod (piste à 86% de la largeur de la carte, comme les 380/440px de
+`$overlayProgression`). Carte réduite proportionnellement (pas de boutons Pause/Annuler
+nécessaires ici) mais même traitement visuel.
+
+Au passage, en déplaçant la fonction `Definir-RegionArrondie` (plus utilisée par la carte de
+progression mais gardée dans le fichier), découvert qu'elle était déjà appelée ailleurs
+(`Afficher-FenetreResultatsLot`, la galerie de vignettes du résultat d'un lot) **sans jamais avoir
+été définie** avant aujourd'hui - un bug latent préexistant (aurait planté au premier affichage de
+cette fenêtre avec "le terme n'est pas reconnu") que la définition conservée corrige par
+ricochet.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : abandon du gros bloc coloré, barre minimale fond clair ("style Windows flashy"), 23/10/2026
 
 Après plusieurs allers-retours sur la forme (collée/flottante, carrée/arrondie, pleine largeur/

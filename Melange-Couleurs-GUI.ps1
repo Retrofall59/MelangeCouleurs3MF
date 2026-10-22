@@ -6585,6 +6585,14 @@ Ajouter-ZoomApercu $pictureAvant "avant"
 # Definir-RegionArrondie ci-dessous) et un petit espace vertical (4px) entre la vignette et la
 # carte au lieu d'etre collee dessus (voir l'appel a PointToScreen dans Mettre-A-Jour-Apercu et
 # Redessiner-Apercu-AvecRotation, qui ajoute desormais ce decalage).
+# 23/10/2026 : fonction ajoutee initialement pour la carte de progression preview (abandonnee plus
+# bas, voir le commentaire dans Creer-CarteProgressionApercu) mais GARDEE ici - en reecrivant ce
+# fichier, trouve un appel PREEXISTANT "Definir-RegionArrondie $carte 10" dans
+# Afficher-FenetreResultatsLot (galerie de vignettes du lot, plus bas dans ce fichier) qui
+# reference cette meme fonction alors qu'elle n'etait definie nulle part avant aujourd'hui - un bug
+# latent deja present (aurait plante au premier affichage de cette fenetre-la avec "le terme
+# n'est pas reconnu"), corrige par ricochet en gardant cette definition meme si la carte de
+# progression preview ne l'utilise plus.
 function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$rayon) {
     $largeurCtrl = $controle.Width
     $hauteurCtrl = $controle.Height
@@ -6599,19 +6607,18 @@ function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$r
 }
 
 function Creer-CarteProgressionApercu([int]$largeurDisponible) {
-    # 23/10/2026, Tomyn, apres plusieurs allers-retours sur la FORME (collee/flottante, carree/
-    # arrondie, pleine largeur/centree) sans jamais regler le probleme - question directe posee
-    # ("qu'est-ce qui est precisement moche ?"), reponse : "la bare en general est moche ce carre
-    # orange ce carre bleu arondi cest ultra moche style windows flashy". Le probleme n'etait donc
-    # ni la forme ni la position : c'est le DENSITE DE COULEUR - un gros bloc plein violet sature
-    # avec un bloc orange sature dedans, pose cru sur fond blanc, lit comme un gros pave "Windows
-    # XP" plutot qu'un element discret. Abandon complet du bloc plein : plus de fond violet sature
-    # (fond clair $THEME.Surface, presque invisible sur la vignette blanche), plus de bloc epais -
-    # une fine barre "pilule" (4px, bouts totalement arrondis) en gris clair avec un segment orange
-    # qui glisse dedans, et un petit texte gris discret au-dessus (pas blanc en gras sur fond
-    # colore). Beaucoup moins de surface de couleur saturee a l'ecran.
-    $largeurCarte = [Math]::Max(140, [int]($largeurDisponible * 0.5))
-    $hauteurCarte = 30
+    # 23/10/2026, Tomyn - apres une tentative de style "minimal, fond clair" annoncee mais jamais
+    # testee (il a coupe court : "non ca va etre encore plus moche pk tu prend le style de la bazre
+    # de prod en overlay") : retour a une copie FIDELE de $overlayProgression (violet plein, titre
+    # blanc en gras, rectangles simples), pas une reinvention. Verification faite sur le CODE de
+    # $overlayProgression (plus haut dans ce fichier) : AUCUN arrondi (pas de Region, pas de
+    # GraphicsPath) n'y est applique explicitement - donc plus de Definir-RegionArrondie ici non
+    # plus, pour coller exactement a la recette prod, pas a une interpretation. Dimensions reduites
+    # proportionnellement (prod : 440x192 avec 2 boutons, piste 380x10 a 86% de la largeur - ici,
+    # pas de boutons necessaires donc carte plus basse, mais memes proportions de piste/marges et
+    # meme traitement de police/couleur).
+    $largeurCarte = [Math]::Max(180, [int]($largeurDisponible * 0.65))
+    $hauteurCarte = 64
     $overlay = New-Object System.Windows.Forms.Form
     $overlay.FormBorderStyle = "None"
     $overlay.ShowInTaskbar = $false
@@ -6621,33 +6628,34 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     # hauteur minimale de fenetre (~39px) meme avec FormBorderStyle=None.
     $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
     $overlay.Size = New-Object System.Drawing.Size($largeurCarte, $hauteurCarte)
-    $overlay.BackColor = $THEME.Surface
-    Definir-RegionArrondie $overlay 6
+    $overlay.BackColor = $THEME.FondBanniere
 
     $labelTitre = New-Object System.Windows.Forms.Label
-    $labelTitre.Text = "Chargement..."
-    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-    $labelTitre.ForeColor = $THEME.TexteSecondaire
+    $labelTitre.Text = "Chargement de l'apercu..."
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11)
+    $labelTitre.ForeColor = [System.Drawing.Color]::White
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
+    $labelTitre.AutoSize = $false
+    $labelTitre.AutoEllipsis = $true
     $labelTitre.TextAlign = "MiddleCenter"
-    $labelTitre.Location = New-Object System.Drawing.Point(8, 4)
-    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 16), 14)
+    $labelTitre.Location = New-Object System.Drawing.Point(8, 10)
+    $labelTitre.Size = New-Object System.Drawing.Size(($largeurCarte - 16), 26)
     $overlay.Controls.Add($labelTitre)
 
-    $hauteurPiste = 4
+    # Meme proportion que $overlayProgression (piste a 86% de la largeur de la carte, centree).
+    $largeurPiste = [int]($largeurCarte * 0.86)
+    $margeLaterale = [int](($largeurCarte - $largeurPiste) / 2)
     $piste = New-Object System.Windows.Forms.Panel
-    $piste.Location = New-Object System.Drawing.Point(8, 20)
-    $piste.Size = New-Object System.Drawing.Size(($largeurCarte - 16), $hauteurPiste)
-    $piste.BackColor = [System.Drawing.Color]::FromArgb(0xE4, 0xE0, 0xEE)
-    Definir-RegionArrondie $piste ([int]($hauteurPiste / 2))
+    $piste.Location = New-Object System.Drawing.Point($margeLaterale, 42)
+    $piste.Size = New-Object System.Drawing.Size($largeurPiste, 10)
+    $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
     $overlay.Controls.Add($piste)
 
-    $largeurRemplissage = [Math]::Max(22, [int](($largeurCarte - 16) * 0.3))
+    $largeurRemplissage = [Math]::Max(30, [int]($largeurPiste * 0.3))
     $remplissage = New-Object System.Windows.Forms.Panel
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
-    $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, $hauteurPiste)
+    $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 10)
     $remplissage.BackColor = $THEME.AccentChaud
-    Definir-RegionArrondie $remplissage ([int]($hauteurPiste / 2))
     $piste.Controls.Add($remplissage)
 
     [PSCustomObject]@{ Overlay = $overlay; Piste = $piste; Remplissage = $remplissage }
