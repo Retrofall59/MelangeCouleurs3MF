@@ -6819,11 +6819,19 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
     # $overlayApercu/$remplissageApercu juste en-dessous) plutot que dans $etatPartage - pas besoin
     # du hashtable partage pour un etat qui ne sert qu'a CE minuteur.
     $directionBarre = 1
+    $diagnosticBarreEcrit = $false
     $overlayApercu = $etatPartage["__ProgressOverlay_$cle__"]
     $remplissageApercu = $etatPartage["__ProgressRemplissage_$cle__"]
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
         $overlayApercu.Show()
+        $overlayApercu.BringToFront()
+        # 23/10/2026 : meme recette que Afficher-OverlayProgression (la fenetre du melange, fiable
+        # en prod) - elle appelle DoEvents() juste apres Show()/BringToFront(), ce que cette
+        # fonction ne faisait PAS jusqu'ici. Sans ca, rien ne force concretement Windows a traiter
+        # le message d'affichage/peinture tout de suite ; ajoute par precaution, meme si ce n'est
+        # officiellement pas cense etre necessaire pour un Show() simple.
+        [System.Windows.Forms.Application]::DoEvents()
         # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
         # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
         # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
@@ -6854,6 +6862,15 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
+            # 23/10/2026 : apres 4 tentatives infructueuses sans jamais pouvoir verifier visuellement
+            # ici (GDI+ indisponible sous Linux), diagnostic ECRIT DANS LE JOURNAL (une seule fois,
+            # au premier tick) plutot qu'une 5e hypothese a l'aveugle - si la barre reste invisible,
+            # ces chiffres (position ecran, taille, visibilite reelle du Form) permettront de savoir
+            # EXACTEMENT ce qui cloche au lieu de deviner encore.
+            if (-not $diagnosticBarreEcrit) {
+                $diagnosticBarreEcrit = $true
+                Ecrire-Journal ("DIAGNOSTIC barre de progression (case '$cle') : position ecran ($($pointEcran.X), $($pointEcran.Y)), taille $($overlayApercu.Width)x$($overlayApercu.Height), Visible=$($overlayApercu.Visible), PictureBox.Width=$($pictureBox.Width), PictureBox.Height=$($pictureBox.Height), ecran primaire=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)")
+            }
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {
@@ -7007,11 +7024,14 @@ $corpsFonctions
     # jamais etre lu/ecrit via $script: a l'interieur d'une closure GetNewClosure(), voir la note plus
     # haut pres de la creation de $script:ApercuEtat).
     $directionBarre = 1
+    $diagnosticBarreEcrit = $false
     $overlayApercu = $script:ApercuEtat["__ProgressOverlay_$cle__"]
     $remplissageApercu = $script:ApercuEtat["__ProgressRemplissage_$cle__"]
     if ($overlayApercu) {
         $remplissageApercu.Left = 0
         $overlayApercu.Show()
+        $overlayApercu.BringToFront()
+        [System.Windows.Forms.Application]::DoEvents()
         # Form.Show() active/donne le focus a la nouvelle fenetre par defaut - sans ce rappel, les
         # fleches du clavier (Ajouter-RaccourcisClavierApercu, qui exige le focus sur la PictureBox)
         # cesseraient de fonctionner des qu'un aperçu se recalcule. Rendu immediat au PictureBox.
@@ -7030,6 +7050,10 @@ $corpsFonctions
             $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
+            if (-not $diagnosticBarreEcrit) {
+                $diagnosticBarreEcrit = $true
+                Ecrire-Journal ("DIAGNOSTIC barre de progression (case '$cle', rotation) : position ecran ($($pointEcran.X), $($pointEcran.Y)), taille $($overlayApercu.Width)x$($overlayApercu.Height), Visible=$($overlayApercu.Visible), PictureBox.Width=$($pictureBox.Width), PictureBox.Height=$($pictureBox.Height), ecran primaire=$([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)")
+            }
             $pas = 10 * $directionBarre
             $nouveauLeft = $remplissageApercu.Left + $pas
             if ($nouveauLeft -le 0) {

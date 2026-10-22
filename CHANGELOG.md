@@ -7,6 +7,27 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Diagnostic (plus une hypothèse à l'aveugle) : barre de progression, 23/10/2026
+
+Tomyn : "toujours non visible" même après le fix sur l'ordre d'exécution (ShowDialog/Maximized).
+4e échec d'affilée sur ce point précis, sans jamais pouvoir vérifier visuellement ici (GDI+
+indisponible sous Linux) — continuer à deviner une 5e fois sans nouvelle information serait
+malhonnête.
+
+Deux choses cette fois :
+1. Un vrai correctif, basé sur une différence concrète trouvée avec `$overlayProgression` (la
+   fenêtre du mélange, qui elle fonctionne en prod) : `Afficher-OverlayProgression` appelle
+   `[System.Windows.Forms.Application]::DoEvents()` juste après `.Show()`/`.BringToFront()`, ce
+   que les fonctions d'aperçu ne faisaient PAS. Ajouté par précaution.
+2. Un DIAGNOSTIC écrit dans le journal de l'appli (une seule fois par calcul, au premier tick) :
+   position écran calculée, taille de la fenêtre-barre, son `.Visible` réel, la taille de la
+   PictureBox, et les limites de l'écran principal. Si la barre reste invisible après ce commit,
+   ces chiffres (visibles dans le journal en bas de l'appli, à copier-coller) permettront de savoir
+   EXACTEMENT ce qui cloche (position hors écran ? coordonnées négatives ? Visible=False malgré le
+   Show() ? écran secondaire ?) plutôt que de continuer à deviner dans le vide.
+
+---
+
 ## Fix : vraie cause de la barre de progression invisible trouvée, 23/10/2026
 
 Tomyn : "barre toujours non visible" même avec la fenêtre TopMost séparée (recette du mélange).
