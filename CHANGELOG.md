@@ -7,6 +7,42 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : bug "nuage de points" - 4e tentative, rasterisation garantie (22/10/2026, soir)
+
+La 3e tentative (sélection par grille d'écran, voir entrée ci-dessous) - vérifiée mathématiquement
+avant envoi (100% de couverture sur un test simulé) - était **toujours pas mieux** en pratique
+("cesta pas mieux"), confirmé par capture d'écran réelle. Mais le log de cette capture est
+révélateur : `32021 dessines` sur 1 472 326 triangles, un chiffre proche de la couverture pixel
+attendue de la silhouette (donc la SÉLECTION fonctionnait comme prévu, cette fois) - le problème
+n'était donc plus "quels triangles choisir" mais "comment ils se dessinent une fois choisis".
+
+**Cause réelle** : les triangles sélectionnés sont toujours dessinés avec leur vraie géométrie
+(`AddPolygon`, 3 vrais sommets) - or sur un maillage aussi dense, l'immense majorité d'entre eux
+sont plus PETITS qu'un pixel d'écran (c'est tout l'historique du seuil d'aire, plus haut dans ce
+fichier, dès le 10/10/2026). GDI+ sans anticrénelage (`SmoothingMode.HighSpeed`, activé pour la
+vitesse) ne garantit pas qu'une forme plus petite qu'un pixel soit rasterisée sur le pixel attendu,
+même si son centre est dans la bonne cellule - selon la position fractionnaire exacte de ses
+sommets, elle peut ne peindre AUCUN pixel ou un pixel voisin, indépendamment d'une sélection par
+ailleurs correcte. D'où un nuage de points malgré une couverture "logique" de 100%.
+
+**Correctif** : un triangle déjà assez grand à l'écran (≥ 4 px², fiable à rasteriser) garde sa
+vraie géométrie, pour un rendu fidèle sur les grandes zones plates. Un triangle sous-pixel (le cas
+qui posait problème) est désormais dessiné comme un petit **carré de taille fixe** (1,6×1,6 px,
+centré sur son point projeté) au lieu de son polygone réel - rasterisation garantie quelle que soit
+sa taille d'origine, et un léger chevauchement (0,6 px) avec les cellules voisines pour éviter tout
+interstice visible entre deux points adjacents.
+
+**Limite assumée** : contrairement aux tentatives précédentes, celle-ci ne peut pas être validée
+par un test purement mathématique (la garantie dépend du comportement réel de rasterisation de
+GDI+, indisponible sous Linux - `System.Drawing` lève une exception à l'instanciation ici,
+vérifié). Le raisonnement (un carré de 1,6 px ne peut pas "rater" son pixel, contrairement à un
+triangle sous-pixel dont la position fractionnaire est imprévisible) est solide, mais **reste à
+confirmer par Tomyn** - si toujours insuffisant, le paramètre à ajuster est `$DEMI_TAILLE_CARRE`
+(actuellement 0,8, soit des carrés de 1,6 px) : l'augmenter légèrement comblerait plus largement
+les interstices, au prix d'un rendu un peu moins net sur les détails fins.
+
+---
+
 ## Correctif : bug "nuage de points" - 3e tentative, approche par grille d'écran (22/10/2026, soir)
 
 La 2e tentative (sous-échantillonnage uniforme par index, voir entrée ci-dessous) était **encore

@@ -3718,12 +3718,44 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             }
         }
         $grp = $groupes[$cle]
-        $pts = @(
-            (New-Object System.Drawing.PointF(($marge + ($p1x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p1y[$i] - $minY) * $echelle))))
-            (New-Object System.Drawing.PointF(($marge + ($p2x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p2y[$i] - $minY) * $echelle))))
-            (New-Object System.Drawing.PointF(($marge + ($p3x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p3y[$i] - $minY) * $echelle))))
-        )
-        $grp.Chemin.AddPolygon($pts)
+        # 22/10/2026, Tomyn : 3e tentative (grille d'ecran, dedup par cellule) TOUJOURS pas mieux
+        # ("cesta pas mieux") - confirme par capture d'ecran reelle, toujours un nuage de points
+        # epars. Le test synthetique envoye avant (disque dense simule) montrait 100% de couverture
+        # - l'erreur n'etait pas dans le CHOIX des triangles (toujours correct, cf. le nombre
+        # dessine desormais tres proche d'un triangle par pixel de silhouette), mais dans le DESSIN
+        # : on dessinait toujours le VRAI polygone du triangle (AddPolygon avec ses 3 vrais sommets)
+        # - or sur un maillage aussi dense, l'immense majorite des triangles sont plus PETITS qu'un
+        # pixel d'ecran (c'est tout l'historique du seuil d'aire plus haut dans ce fichier) : GDI+
+        # sans anticrenelage (HighSpeed) ne garantit PAS qu'une forme plus petite qu'un pixel soit
+        # rasterisee sur le pixel attendu, meme si son centre est bien dans la bonne cellule - selon
+        # la position fractionnaire exacte de ses sommets, elle peut rasteriser sur 0 pixel ou un
+        # pixel voisin, independamment de la cellule choisie par la dedup. D'ou le nuage de points
+        # malgre une selection par cellule pourtant correcte.
+        # Correctif : on ne dessine plus le polygone reel (potentiellement sous-pixel) mais un petit
+        # carre de taille FIXE (plus large qu'un pixel, pour un leger chevauchement entre cellules
+        # voisines et eviter tout interstice du a l'arrondi) centre sur le point choisi - rasterisation
+        # garantie quelle que soit la taille reelle du triangle d'origine. Un gros triangle qui
+        # couvrirait plusieurs cellules aura de toute facon plusieurs de ses voisins (ou lui-meme
+        # via une autre cellule) selectionnes separement par la dedup, donc toujours bien rempli.
+        # Un triangle deja assez grand a l'ecran (>= 4 px^2, soit l'equivalent d'environ 2x2
+        # pixels) rasterise de toute facon de maniere fiable avec sa vraie geometrie - inutile de
+        # le remplacer, et ca garde le rendu fidele (pas de bord carre artificiel) sur les zones
+        # plates/larges d'un maillage normal comme Water_Weird. Seuls les triangles sous-pixel
+        # (le cas qui posait probleme) passent par le carre garanti.
+        if ($aireEcran[$i] -ge 4.0) {
+            $pts = @(
+                (New-Object System.Drawing.PointF(($marge + ($p1x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p1y[$i] - $minY) * $echelle))))
+                (New-Object System.Drawing.PointF(($marge + ($p2x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p2y[$i] - $minY) * $echelle))))
+                (New-Object System.Drawing.PointF(($marge + ($p3x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p3y[$i] - $minY) * $echelle))))
+            )
+            $grp.Chemin.AddPolygon($pts)
+        } else {
+            $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
+            $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
+            $DEMI_TAILLE_CARRE = 0.8
+            $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
+            $grp.Chemin.AddRectangle($rect)
+        }
         $grp.SommeZ += $zMoyen[$i]
         $grp.Compte++
     }
