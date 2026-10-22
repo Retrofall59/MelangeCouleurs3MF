@@ -3627,40 +3627,42 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
     # plus que la division par ~4 attendue) - le seuil est maintenant mis a l'echelle avec la surface
     # reelle de l'image (largeur x hauteur) par rapport a cette reference, pour garder une densite de
     # triangles affiches comparable quelle que soit la taille demandee.
-    # 22/10/2026, Tomyn : bug "nuage de points" - 1er correctif (seuil d'aire "plancher" a 15% des
-    # triangles) INSUFFISANT, confirme par capture d'ecran reelle (toujours tres troue/en points).
-    # Vraie cause trouvee en y repensant : le probleme n'est pas seulement COMBIEN de triangles
-    # survivent, mais LESQUELS. Un seuil par AIRE ECRAN favorise mecaniquement les zones PLATES
-    # vues de face (grands triangles projetes) et elimine en priorite les zones de forte courbure
-    # ou vues de profil (triangles mecaniquement petits a l'ecran, meme geometriquement normaux) -
-    # sur un maillage dense, ca concentre les triangles conserves sur quelques zones plates et vide
-    # presque tout le reste : exactement l'aspect "nuage de points" denonce, quel que soit le
-    # NOMBRE total conserve (le 1er correctif en gardait pourtant 3x plus, sans effet visuel).
-    # Remplace par un sous-echantillonnage UNIFORME (un triangle sur N, repartis dans l'ordre des
-    # indices d'origine, PAS par aire) : couverture homogene de TOUTE la surface quelle que soit sa
-    # courbure, a nombre de triangles dessines a peu pres EGAL au comportement actuel sur un
-    # maillage normal (donc pas de regression de vitesse attendue - voir le calcul du budget
-    # ci-dessous, cale sur le ratio triangles/pixel deja observe et accepte par Tomyn sur
-    # Water_Weird : 111717 dessines pour une image 300x260, soit ~1,43 triangle/pixel).
-    $RATIO_TRIANGLES_PAR_PIXEL = 1.43
-    $PLAFOND_DESSINES_ABSOLU = 300000
-    $budgetDessines = [Math]::Min([int]([Math]::Round($RATIO_TRIANGLES_PAR_PIXEL * $largeur * $hauteur)), $PLAFOND_DESSINES_ABSOLU)
-
-    # $indices est deja l'ordre "peintre" (arriere -> avant, voir le tri plus haut) - on y retire
-    # uniquement les triangles degenerescents (aire nulle ou negative, numeriquement invisibles de
-    # toute facon), puis on sous-echantillonne UNIFORMEMENT si besoin pour tenir le budget.
-    $indicesVisibles = New-Object System.Collections.Generic.List[int]
+    # 22/10/2026, Tomyn : bug "nuage de points" - 1er correctif (plancher d'aire a 15%) et 2e
+    # correctif (sous-echantillonnage UNIFORME par index, "c'est pire lol" - confirme par capture
+    # d'ecran reelle, encore plus epars que le 1er) tous les deux INSUFFISANTS. En rouvrant le
+    # commentaire du 10/10/2026 juste au-dessus : un essai similaire ("un triangle sur deux, au
+    # hasard") avait DEJA ete teste et REJETE avant meme la toute premiere version de cet outil,
+    # pour la meme raison (trous visibles) - j'ai refait la meme erreur sans voir ce commentaire.
+    # La vraie raison pour laquelle aucun sous-echantillonnage par INDICE (par aire OU uniforme) ne
+    # peut marcher : l'ordre des indices (trie par profondeur Z pour l'affichage peintre) n'a AUCUN
+    # rapport avec la position 2D a l'ecran d'un triangle - "un sur N" en index peut laisser des
+    # zones ENTIERES de l'image sans aucun representant, par pur hasard de la geometrie.
+    #
+    # 3e correctif (celui-ci) : on ne choisit plus QUELS triangles dessiner par un critere indirect
+    # (aire, index) - on choisit directement par POSITION A L'ECRAN. Chaque triangle est assigne a
+    # la cellule de grille (1 pixel d'apercu) de son centre projete ; on ne garde qu'UN triangle
+    # representant par cellule DEJA occupee. Resultat garanti PAR CONSTRUCTION, pas par probabilite
+    # : tout pixel que le maillage touche reste couvert par au moins un triangle, zero trou possible
+    # (le pire cas est un pixel isole non couvert parce qu'AUCUN triangle n'y projette son centre,
+    # ce qui n'arrive que sur un bord d'image deja hors silhouette). Bonus : le cout de dessin est
+    # maintenant borne par la RESOLUTION de l'image (au plus largeur x hauteur triangles dessines),
+    # plus par la densite du maillage d'origine - plus rapide que les 2 tentatives precedentes sur
+    # un maillage dense, pas seulement plus correct visuellement.
+    $cellulesOccupees = New-Object 'System.Collections.Generic.HashSet[Int64]'
+    $indicesFinaux = New-Object System.Collections.Generic.List[int]
     foreach ($i in $indices) {
-        if ($aireEcran[$i] -gt 0) { [void]$indicesVisibles.Add($i) }
-    }
-    if ($indicesVisibles.Count -gt $budgetDessines -and $budgetDessines -gt 0) {
-        $pasEchantillon = [Math]::Ceiling($indicesVisibles.Count / [double]$budgetDessines)
-        $indicesFinaux = New-Object System.Collections.Generic.List[int]
-        for ($idx = 0; $idx -lt $indicesVisibles.Count; $idx += $pasEchantillon) {
-            [void]$indicesFinaux.Add($indicesVisibles[$idx])
+        if ($aireEcran[$i] -le 0) { continue }
+        $cx = $marge + ((($p1x[$i] + $p2x[$i] + $p3x[$i]) / 3.0) - $minX) * $echelle
+        $cy = $hauteur - ($marge + ((($p1y[$i] + $p2y[$i] + $p3y[$i]) / 3.0) - $minY) * $echelle)
+        $cellX = [int64][math]::Floor($cx)
+        $cellY = [int64][math]::Floor($cy)
+        # Cle unique par cellule (decalage large pour eviter toute collision X/Y, largement
+        # suffisant pour n'importe quelle taille d'apercu realiste, meme en cas de depassement
+        # leger des bords de l'image du a l'arrondi).
+        $cle = ($cellX * 2000000L) + $cellY + 1000000L
+        if ($cellulesOccupees.Add($cle)) {
+            [void]$indicesFinaux.Add($i)
         }
-    } else {
-        $indicesFinaux = $indicesVisibles
     }
     $compteurDessines = 0
 

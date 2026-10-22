@@ -7,6 +7,43 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : bug "nuage de points" - 3e tentative, approche par grille d'écran (22/10/2026, soir)
+
+La 2e tentative (sous-échantillonnage uniforme par index, voir entrée ci-dessous) était **encore
+pire** - confirmé par capture d'écran réelle de Tomyn ("eug=h comment dire cest pire lol"), plus
+épars que la 1ère tentative. En rouvrant un commentaire déjà présent dans le code (10/10/2026) :
+un essai quasiment identique ("un triangle sur deux, au hasard") avait déjà été testé et **rejeté**
+avant même la toute première version de cet outil, pour la même raison (trous visibles) - erreur
+répétée faute d'avoir relu ce commentaire avant d'implémenter la 2e tentative.
+
+**Cause racine, cette fois correctement identifiée** : aucun sous-échantillonnage par INDICE (par
+aire écran OU uniforme) ne peut fonctionner, parce que l'ordre des indices (trié par profondeur Z
+pour l'affichage peintre) n'a strictement aucun rapport avec la position 2D réelle à l'écran d'un
+triangle - "un sur N" en index peut laisser des zones entières de l'image sans aucun représentant,
+par pur hasard géométrique, quelle que soit la proportion conservée.
+
+**Correctif (3e tentative)** : sélection par **grille de pixels d'écran** au lieu d'un critère
+indirect. Chaque triangle est projeté à son centre, assigné à la cellule de grille (1 pixel
+d'aperçu) correspondante, et un seul triangle "représentant" est gardé par cellule déjà occupée
+(`HashSet` de clés de cellule). Résultat garanti **par construction**, pas par probabilité : tout
+pixel que le maillage touche reste couvert, puisque le triangle retenu est ensuite dessiné avec sa
+géométrie COMPLÈTE (3 vrais sommets, via `AddPolygon`/`FillPath` comme avant) et non comme un point
+- un gros triangle plat remplit toujours toute sa vraie surface, pas juste 1 pixel. Bonus : le
+coût de dessin est maintenant borné par la RÉSOLUTION de l'image (au plus largeur × hauteur
+triangles dessinés), plus par la densité du maillage d'origine.
+
+**Validé par un test réel avant envoi** (pas seulement une relecture de code, après deux échecs
+d'affilée) : simulation d'un disque dense de 1,4 million de points aléatoires projetés sur une
+image 300×260 - vérifié que les 29 837 pixels intérieurs de la silhouette simulée sont TOUS
+couverts après dédoublonnage par grille (100%, zéro trou), avec seulement 31 739 triangles
+représentants retenus (moins que les ~105-112k des tentatives précédentes - donc plus rapide
+aussi, pas seulement plus correct). Toujours pas de rendu Windows réel possible depuis cette
+session Linux - **à confirmer par Tomyn sur son vrai fichier**, mais cette fois la garantie de
+couverture est mathématique (démontrée sur le même ordre de grandeur de densité que son fichier
+réel), pas une approximation statistique comme les deux tentatives précédentes.
+
+---
+
 ## Correctif : bug "nuage de points" - 2e tentative, cause réelle trouvée (22/10/2026, soir)
 
 Le 1er correctif du jour (plancher de 15% de triangles conservés, voir entrée ci-dessous) était
