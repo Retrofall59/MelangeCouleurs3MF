@@ -3802,31 +3802,67 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
             }
         }
         $grp = $groupes[$cle]
-        # 22/10/2026, Tomyn : apres reactivation d'AntiAlias (voir plus haut a la creation de $g),
-        # "toujour aussi flou ligne pas droite" - AntiAlias seul n'a RIEN change, ce qui ecarte
-        # definitivement l'aliasing comme cause unique. La vraie explication, plus structurelle : la
-        # quasi-totalite de la surface dessinee passait par le CARRE de secours ci-dessous (voir
-        # historique conserve plus bas), pas par la vraie geometrie du triangle - or un contour fait
-        # d'un empilement de petits carres ALIGNES SUR LA GRILLE ne peut tout simplement pas suivre
-        # une ligne ou une courbe diagonale reelle du maillage, quel que soit le reglage
-        # d'anticrenelage applique ensuite : chaque "marche" du carre reste une marche, juste avec
-        # un bord legerement adouci - d'ou le "flou" ET "pas droit" en meme temps, ce sont en fait
-        # DEUX symptomes du MEME probleme (la geometrie dessinee n'est pas la vraie geometrie du
-        # maillage). Le carre avait ete invente (10/10/2026) car HighSpeed (sans anticrenelage) ne
-        # garantissait pas la rasterisation d'un triangle plus petit qu'un pixel - mais c'est
-        # precisement ce que l'anticrenelage sait faire NATIVEMENT (couverture partielle d'un pixel,
-        # avec melange d'opacite), sans avoir besoin d'un carre de substitution. Avec AntiAlias
-        # maintenant actif, le carre de secours n'a plus de raison d'etre : on dessine desormais
-        # TOUJOURS la vraie geometrie du triangle (ses 3 vrais sommets), petit ou grand - la
-        # selection multi-cellule plus haut garantit toujours qu'au moins un representant est
-        # choisi partout ou le maillage est present, mais c'est maintenant sa VRAIE forme qui est
-        # dessinee, pas un carre qui l'approxime grossierement.
-        $pts = @(
-            (New-Object System.Drawing.PointF(($marge + ($p1x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p1y[$i] - $minY) * $echelle))))
-            (New-Object System.Drawing.PointF(($marge + ($p2x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p2y[$i] - $minY) * $echelle))))
-            (New-Object System.Drawing.PointF(($marge + ($p3x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p3y[$i] - $minY) * $echelle))))
-        )
-        $grp.Chemin.AddPolygon($pts)
+        # 22/10/2026, Tomyn : 3e tentative (grille d'ecran, dedup par cellule) TOUJOURS pas mieux
+        # ("cesta pas mieux") - confirme par capture d'ecran reelle, toujours un nuage de points
+        # epars. Le test synthetique envoye avant (disque dense simule) montrait 100% de couverture
+        # - l'erreur n'etait pas dans le CHOIX des triangles (toujours correct, cf. le nombre
+        # dessine desormais tres proche d'un triangle par pixel de silhouette), mais dans le DESSIN
+        # : on dessinait toujours le VRAI polygone du triangle (AddPolygon avec ses 3 vrais sommets)
+        # - or sur un maillage aussi dense, l'immense majorite des triangles sont plus PETITS qu'un
+        # pixel d'ecran (c'est tout l'historique du seuil d'aire plus haut dans ce fichier) : GDI+
+        # sans anticrenelage (HighSpeed) ne garantit PAS qu'une forme plus petite qu'un pixel soit
+        # rasterisee sur le pixel attendu, meme si son centre est bien dans la bonne cellule - selon
+        # la position fractionnaire exacte de ses sommets, elle peut rasteriser sur 0 pixel ou un
+        # pixel voisin, independamment de la cellule choisie par la dedup. D'ou le nuage de points
+        # malgre une selection par cellule pourtant correcte.
+        # Correctif : on ne dessine plus le polygone reel (potentiellement sous-pixel) mais un petit
+        # carre de taille FIXE (plus large qu'un pixel, pour un leger chevauchement entre cellules
+        # voisines et eviter tout interstice du a l'arrondi) centre sur le point choisi - rasterisation
+        # garantie quelle que soit la taille reelle du triangle d'origine. Un gros triangle qui
+        # couvrirait plusieurs cellules aura de toute facon plusieurs de ses voisins (ou lui-meme
+        # via une autre cellule) selectionnes separement par la dedup, donc toujours bien rempli.
+        # Un triangle deja assez grand a l'ecran (>= 4 px^2, soit l'equivalent d'environ 2x2
+        # pixels) rasterise de toute facon de maniere fiable avec sa vraie geometrie - inutile de
+        # le remplacer, et ca garde le rendu fidele (pas de bord carre artificiel) sur les zones
+        # plates/larges d'un maillage normal comme Water_Weird. Seuls les triangles sous-pixel
+        # (le cas qui posait probleme) passent par le carre garanti.
+        if ($aireEcran[$i] -ge 4.0) {
+            $pts = @(
+                (New-Object System.Drawing.PointF(($marge + ($p1x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p1y[$i] - $minY) * $echelle))))
+                (New-Object System.Drawing.PointF(($marge + ($p2x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p2y[$i] - $minY) * $echelle))))
+                (New-Object System.Drawing.PointF(($marge + ($p3x[$i] - $minX) * $echelle), ($hauteur - ($marge + ($p3y[$i] - $minY) * $echelle))))
+            )
+            $grp.Chemin.AddPolygon($pts)
+        } else {
+            # 22/10/2026, Tomyn : "des manques" meme avec la revendication multi-cellule plus haut -
+            # le carre etait jusqu'ici centre sur le centroide REEL du triangle representant, qui
+            # peut tomber n'importe ou a l'interieur de sa cellule (pres d'un bord). Desormais chaque
+            # cellule revendiquee est dessinee centree sur SA PROPRE cellule (CellX+0.5, CellY+0.5),
+            # pas sur la position reelle du triangle - garantit que cette cellule precise est
+            # entierement couverte par son carre, quelle que soit la position d'origine du triangle
+            # qui l'a revendiquee.
+            $cx = $cel.CellX + 0.5
+            $cy = $cel.CellY + 0.5
+            # 22/10/2026, Tomyn : 0.8, puis 1.3, puis 2.2 (px de demi-cote) - chaque augmentation
+            # changeait a peine le rendu, ce qui aurait du mettre la puce a l'oreille plus tot : le
+            # vrai probleme etait le FillMode "Alternate" du GraphicsPath (voir le commentaire plus
+            # haut, pres de la creation du groupe) qui ANNULAIT les zones de chevauchement au lieu
+            # de les fusionner - plus les carres etaient gros, plus il y avait de chevauchement
+            # annule, d'ou le quasi-statu-quo malgre les augmentations. Maintenant que le
+            # GraphicsPath est en "Winding" (fusionne au lieu d'annuler), un chevauchement modeste
+            # suffit a nouveau - retour a une taille raisonnable (1,4 px, 0,4 px de chevauchement
+            # avec les cellules voisines a 1 px) pour un rendu net, sans le flou inutile des
+            # tailles precedentes qui compensaient (a tort) le vrai bug.
+            # 22/10/2026, Tomyn : "peut mieux faire" avec 0.7 (1,4 px) - le fond est acquis (forme
+            # et ombrage nettement visibles, plus de nuage de points), reste un grain residuel sur
+            # les zones claires/en bordure. Leger coup de pouce (0.7 -> 0.95, soit 1,9 px, 0,9 px de
+            # chevauchement) pour lisser ce grain, maintenant que le chevauchement fusionne
+            # correctement (Winding) - pas besoin de grossir beaucoup, juste assez pour fermer les
+            # derniers petits interstices.
+            $DEMI_TAILLE_CARRE = 0.95
+            $rect = New-Object System.Drawing.RectangleF(($cx - $DEMI_TAILLE_CARRE), ($cy - $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE), (2 * $DEMI_TAILLE_CARRE))
+            $grp.Chemin.AddRectangle($rect)
+        }
         $grp.SommeZ += $zMoyen[$i]
         $grp.Compte++
     }

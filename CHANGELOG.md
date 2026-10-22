@@ -7,33 +7,28 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
-## Correctif : retour à la vraie géométrie des triangles (plus de carrés), 22/10/2026, soir
+## Annulé : retour à la vraie géométrie - régression confirmée ("pire qu'avant"), 22/10/2026, soir
 
-Après réactivation d'AntiAlias : "toujour aussi flou ligne pas droite" - **aucun** changement
-visible. Ça écarte définitivement l'aliasing comme cause unique et pointe vers quelque chose de
-plus structurel.
+Le passage au dessin systématique de la vraie géométrie du triangle (voir entrée annulée
+ci-dessous) a été testé par Tomyn : "et pour le preview cest pire quavant" - capture d'écran à
+l'appui, une forme très pâle/délavée, presque un fil de fer, bien pire que les versions
+précédentes.
 
-**Vraie cause** : la quasi-totalité de la surface dessinée passait par le petit **carré de
-secours** (voir historique du 10/10-22/10 conservé dans le code), pas par la vraie géométrie du
-triangle. Un contour fait d'un empilement de petits carrés alignés sur la grille d'écran ne peut
-tout simplement pas suivre une ligne ou une courbe diagonale réelle du maillage, quel que soit le
-réglage d'anticrénelage appliqué ensuite - chaque "marche" du carré reste une marche, juste avec un
-bord légèrement adouci. "Flou" et "pas droit" étaient donc deux symptômes du **même** problème : la
-géométrie dessinée n'était pas la vraie géométrie du maillage.
+**Explication** : sur un maillage aussi dense, un triangle sous-pixel ne couvre souvent qu'une
+toute petite fraction d'un pixel d'écran. Sous anticrénelage, GDI+ rend cette couverture
+fidèlement - partielle, donc une opacité faible - au lieu de forcer le pixel plein comme le
+faisait (par construction) le carré de secours, volontairement surdimensionné (1,9 px) pour
+garantir une couverture pleine. Le carré n'était donc pas qu'un contournement pour la
+rasterisation : il compensait aussi, par sa taille, la trop faible surface réelle des triangles
+sous-pixel pris individuellement. Sans lui, même avec la sélection multi-cellule (qui garantit
+qu'une cellule a toujours un représentant, mais pas que ce représentant couvre toute la cellule),
+le rendu devient clairsemé et pâle.
 
-Le carré avait été inventé le 10/10/2026 parce que `HighSpeed` (sans anticrénelage) ne garantissait
-pas la rasterisation d'un triangle plus petit qu'un pixel - mais c'est précisément ce que
-l'anticrénelage sait faire nativement (couverture partielle d'un pixel, mélange d'opacité), sans
-carré de substitution.
-
-**Correctif** : avec `AntiAlias` maintenant actif (correctif précédent), le carré de secours n'a
-plus de raison d'être - on dessine désormais **toujours** la vraie géométrie du triangle (`AddPolygon`
-avec ses 3 vrais sommets), petit ou grand. La sélection multi-cellule (correctif des "trous
-ponctuels") reste inchangée et continue de garantir qu'au moins un représentant est choisi partout
-où le maillage est présent - c'est juste sa vraie forme qui est dessinée maintenant, plus un carré
-qui l'approxime grossièrement. Pas de test visuel possible dans cet environnement - à confirmer par
-Tomyn, y compris sur le temps de calcul (l'anticrénelage sur de vrais polygones peut coûter
-légèrement plus cher que sur des rectangles).
+**Correctif** : retour au carré de secours pour les triangles sous-pixel (`git revert` du
+changement), `AntiAlias` conservé (voir entrée ci-dessous, inchangée par ailleurs). Le vrai
+problème "escalier" reste donc non résolu à ce stade - prochaine piste à explorer : garder les
+carrés (coverage garantie) mais avec l'anticrénelage actif dessus, ce qui devrait au moins adoucir
+visuellement les marches sans revenir au rendu délavé.
 
 ---
 
