@@ -7,6 +7,36 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : retour à la vraie géométrie des triangles (plus de carrés), 22/10/2026, soir
+
+Après réactivation d'AntiAlias : "toujour aussi flou ligne pas droite" - **aucun** changement
+visible. Ça écarte définitivement l'aliasing comme cause unique et pointe vers quelque chose de
+plus structurel.
+
+**Vraie cause** : la quasi-totalité de la surface dessinée passait par le petit **carré de
+secours** (voir historique du 10/10-22/10 conservé dans le code), pas par la vraie géométrie du
+triangle. Un contour fait d'un empilement de petits carrés alignés sur la grille d'écran ne peut
+tout simplement pas suivre une ligne ou une courbe diagonale réelle du maillage, quel que soit le
+réglage d'anticrénelage appliqué ensuite - chaque "marche" du carré reste une marche, juste avec un
+bord légèrement adouci. "Flou" et "pas droit" étaient donc deux symptômes du **même** problème : la
+géométrie dessinée n'était pas la vraie géométrie du maillage.
+
+Le carré avait été inventé le 10/10/2026 parce que `HighSpeed` (sans anticrénelage) ne garantissait
+pas la rasterisation d'un triangle plus petit qu'un pixel - mais c'est précisément ce que
+l'anticrénelage sait faire nativement (couverture partielle d'un pixel, mélange d'opacité), sans
+carré de substitution.
+
+**Correctif** : avec `AntiAlias` maintenant actif (correctif précédent), le carré de secours n'a
+plus de raison d'être - on dessine désormais **toujours** la vraie géométrie du triangle (`AddPolygon`
+avec ses 3 vrais sommets), petit ou grand. La sélection multi-cellule (correctif des "trous
+ponctuels") reste inchangée et continue de garantir qu'au moins un représentant est choisi partout
+où le maillage est présent - c'est juste sa vraie forme qui est dessinée maintenant, plus un carré
+qui l'approxime grossièrement. Pas de test visuel possible dans cet environnement - à confirmer par
+Tomyn, y compris sur le temps de calcul (l'anticrénelage sur de vrais polygones peut coûter
+légèrement plus cher que sur des rectangles).
+
+---
+
 ## Correctif : "flou" identifié - aliasing, pas du flou (AntiAlias réactivé), 22/10/2026, soir
 
 Tomyn précise enfin concrètement : "les lignes qui devraient être droites sont en escalier". Ce
