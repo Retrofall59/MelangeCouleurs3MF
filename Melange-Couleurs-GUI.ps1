@@ -4641,6 +4641,22 @@ $form.FormBorderStyle = "Sizable"
 $form.StartPosition = "CenterScreen"
 $form.BackColor = $THEME.FondApp
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+# 22/10/2026, Tomyn : "c'est flou directement, sans zoomer" - confirme que ce n'est PAS un probleme
+# de dessin (deja verifie point par point : grain corrige, trous corriges) mais quelque chose en
+# amont. $pictureApres/$pictureAvant ont un SizeMode "Zoom" mais une Size EXACTEMENT egale a l'image
+# dessinee dedans (300x260) - en theorie aucun etirement ne devrait avoir lieu. Mais AutoScaleMode
+# de WinForms (base sur la police, un mecanisme DIFFERENT et INDEPENDANT du DPI-aware deja regle le
+# 12/10/2026 plus haut dans ce fichier) peut re-mettre a l'echelle les Size/Location de TOUS les
+# controles au chargement du formulaire si l'environnement (police systeme, resolution) differe de
+# la ligne de base implicite - dans ce cas la PictureBox ne ferait plus EXACTEMENT 300x260 a
+# l'execution, et son SizeMode "Zoom" etirerait alors reellement l'image avec interpolation, d'ou le
+# flou constate directement, sans rapport avec l'algorithme de dessin lui-meme (ce qui expliquerait
+# aussi pourquoi aucune des tentatives precedentes, toutes focalisees sur le dessin, n'a jamais
+# change quoi que ce soit a ce flou). Correctif : desactiver cet autoscale historique, redondant
+# avec le DPI-aware deja en place, pour garantir que chaque controle garde EXACTEMENT la taille en
+# pixels fixee dans le code, sans ecart possible. Hypothese, pas confirmee visuellement (System.Drawing
+# indisponible sous Linux) - a verifier par Tomyn.
+$form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 
 try {
     $bmpIcone = Creer-ImageSpool 64 $THEME.FondApp

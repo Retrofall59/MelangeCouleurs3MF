@@ -7,6 +7,30 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Hypothèse : flou direct (AutoScaleMode WinForms), 22/10/2026, soir
+
+Retour de Tomyn, clarifié via deux questions ciblées : le violet dominant est bien la vraie couleur
+du fichier (pas un bug), mais le flou est visible **directement, sans zoomer**. Important : les
+deux correctifs précédents (grain, trous) n'ont jamais eu d'effet sur ce flou précis, alors qu'ils
+changent clairement le rendu pixel par pixel sur les captures reçues - signal fort que le flou
+n'est PAS un problème de dessin.
+
+**Piste** : `$pictureApres`/`$pictureAvant` (SizeMode "Zoom") ont une taille de contrôle fixée
+exactement à 300x260, identique à l'image dessinée dedans - en théorie zéro étirement. Mais
+`AutoScaleMode` de WinForms (mise à l'échelle basée sur la police, mécanisme différent et
+indépendant du DPI-aware déjà réglé le 12/10/2026) peut re-dimensionner Size/Location de TOUS les
+contrôles au chargement si l'environnement differe de la ligne de base implicite - dans ce cas la
+PictureBox ne ferait plus exactement 300x260 à l'exécution, et "Zoom" étirerait alors réellement
+l'image avec interpolation, d'où un flou direct sans rapport avec l'algorithme de dessin.
+
+**Correctif** : `$form.AutoScaleMode = None` juste après la création du formulaire, pour garantir
+que chaque contrôle garde exactement la taille en pixels fixée dans le code. Hypothèse, pas
+confirmée visuellement (`System.Drawing` indisponible sous Linux) - à vérifier par Tomyn. Si ça ne
+change rien, le flou vient d'ailleurs (peut-être inhérent à l'algorithme de dessin par petits
+carrés quantifiés sur une image aussi petite) et il faudra une piste différente.
+
+---
+
 ## Correctif : nuage de points - trous ponctuels (revendication multi-cellule), 22/10/2026, soir
 
 Retour de Tomyn après capture d'écran zoomée : "c'est très moche, il y a des manques, c'est très
