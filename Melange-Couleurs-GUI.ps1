@@ -6626,6 +6626,12 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     $overlay.StartPosition = "Manual"
     $overlay.Size = New-Object System.Drawing.Size($largeurCarte, $hauteurCarte)
     $overlay.BackColor = $THEME.FondBanniere
+    # 23/10/2026, Tomyn, une fois la position/taille enfin bonnes : "ca fait un peu trop carre ca
+    # fait un peu trop Windows stylise-moi ca un peu" - coins arrondis sur la carte (Definir-
+    # RegionArrondie, deja presente dans ce fichier pour la galerie de resultats de lot) et bouts
+    # arrondis sur la piste/le remplissage (forme "pilule"), $overlayProgression lui-meme n'ayant
+    # pas ce traitement mais Tomyn demandant explicitement un style plus doux ici.
+    Definir-RegionArrondie $overlay 16
 
     $labelTitre = New-Object System.Windows.Forms.Label
     $labelTitre.Text = "Chargement de l'apercu..."
@@ -6644,6 +6650,7 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     $piste.Location = New-Object System.Drawing.Point(30, 75)
     $piste.Size = New-Object System.Drawing.Size(380, 10)
     $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+    Definir-RegionArrondie $piste 5
     $overlay.Controls.Add($piste)
 
     $largeurRemplissage = [int](380 * 0.3)
@@ -6651,6 +6658,7 @@ function Creer-CarteProgressionApercu([int]$largeurDisponible) {
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
     $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 10)
     $remplissage.BackColor = $THEME.AccentChaud
+    Definir-RegionArrondie $remplissage 5
     $piste.Controls.Add($remplissage)
 
     [PSCustomObject]@{ Overlay = $overlay; Piste = $piste; Remplissage = $remplissage }

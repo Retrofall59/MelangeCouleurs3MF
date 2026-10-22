@@ -7,6 +7,19 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Polish : coins arrondis sur la carte de progression preview ("trop carré, trop Windows"), 23/10/2026
+
+Une fois la position/taille enfin bonnes (overlay centré sur la fenêtre, dimensions de
+`$overlayProgression`), Tomyn : "ça fait un peu trop carré ça fait un peu trop Windows stylise-moi
+ça un peu". Ajout de coins arrondis sur la carte (rayon 16px) et de bouts arrondis ("pilule") sur
+la piste et le remplissage (rayon 5px, soit la moitié de leur hauteur de 10px) - `$overlayProgression`
+lui-même n'a pas ce traitement dans son code, mais Tomyn demande explicitement un style plus doux
+ici, donc appliqué uniquement à la carte preview.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : la carte n'est plus du tout liée à la vignette - overlay centré sur la fenêtre comme $overlayProgression, 23/10/2026
 
 Tomyn, message sans ambiguïté après plusieurs échecs successifs : "pourquoi tu t'obstines à
