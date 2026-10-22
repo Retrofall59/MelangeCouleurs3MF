@@ -7,6 +7,29 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Correctif : "flou" identifié - aliasing, pas du flou (AntiAlias réactivé), 22/10/2026, soir
+
+Tomyn précise enfin concrètement : "les lignes qui devraient être droites sont en escalier". Ce
+n'est pas du flou au sens propre, c'est de l'**aliasing** - des bords en marches d'escalier au lieu
+de lignes nettes - exactement ce que produit `SmoothingMode.HighSpeed` par conception (il
+désactive l'anticrénelage). Aucun des correctifs précédents (grain, trous, AutoScaleMode) ne
+pouvait avoir d'effet là-dessus, aucun ne touchait à ce réglage.
+
+Le `HighSpeed` avait été choisi le 10/10/2026 car l'anticrénelage était jugé "ultra long" - mais ce
+chronométrage datait d'**avant** le regroupement par couleur en un seul `FillPath` par teinte
+(optimisation du même jour, plus bas dans le fichier) : à l'époque c'était un `FillPolygon`
+individuel par triangle (centaines de milliers d'appels), où le coût par-appel de l'anticrénelage
+devenait effectivement énorme. Aujourd'hui le dessin final ne fait plus qu'une poignée de
+`FillPath` (un par teinte distincte, ~100-200 sur un fichier typique) - la structure de coût qui
+justifiait `HighSpeed` à l'époque n'existe plus : l'anticrénelage ne coûte plus qu'une fois par
+groupe, pas par triangle.
+
+**Correctif** : `SmoothingMode.AntiAlias` à la place de `HighSpeed`. Pas de test visuel possible
+dans cet environnement (`System.Drawing` indisponible sous Linux) ni de mesure de temps réelle - à
+confirmer par Tomyn, sur le rendu ET sur le temps de calcul.
+
+---
+
 ## Hypothèse : flou direct (AutoScaleMode WinForms), 22/10/2026, soir
 
 Retour de Tomyn, clarifié via deux questions ciblées : le violet dominant est bien la vraie couleur

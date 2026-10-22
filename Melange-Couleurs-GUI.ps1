@@ -3607,14 +3607,19 @@ function Nouvelle-ImageApercu($triangles, [int]$largeur, [int]$hauteur, [double]
 
     $bmp = New-Object System.Drawing.Bitmap $largeur, $hauteur
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    # Correctif du 10/10/2026 (Tomyn : "ultra long" a charger) : AntiAlias est connu pour couter
-    # tres cher en GDI+ par polygone depose - sur des dizaines/centaines de milliers de triangles
-    # (jamais chronometrable ici, System.Drawing n'existe pas sous Linux), ca peut facilement
-    # devenir le vrai goulot, bien plus que le calcul en lui-meme (deja optimise juste avant). Sans
-    # interet visuel sur une image d'apercu aussi petite (300x260) avec autant de triangles minuscules
-    # empiles les uns sur les autres - HighSpeed desactive l'anticrenelage et les autres options
-    # couteuses du meme genre.
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighSpeed
+    # 22/10/2026, Tomyn : la vraie description du "flou" enfin obtenue - "les lignes qui devraient
+    # etre droites sont en escalier". Ce n'est pas du flou au sens propre, c'est de l'ALIASING : des
+    # bords en marches d'escalier au lieu de lignes nettes/lisses, exactement ce que produit
+    # SmoothingMode.HighSpeed PAR CONCEPTION (il desactive l'anticrenelage). Aucun des correctifs
+    # precedents (grain, trous) ne pouvait avoir d'effet dessus, ils ne touchaient pas a ce reglage.
+    # Correctif du 10/10/2026 ci-dessous, perime : le "ultra long" mesure a l'epoque datait d'AVANT
+    # le regroupement par couleur/un seul FillPath par teinte (voir plus bas, aussi du 10/10/2026) -
+    # a cette epoque, c'etait un FillPolygon individuel PAR TRIANGLE (des centaines de milliers
+    # d'appels), ou le cout par-appel de l'anticrenelage devenait effectivement enorme. Aujourd'hui,
+    # le dessin final ne fait plus qu'une poignee de FillPath (un par teinte distincte, ~100-200
+    # sur un fichier typique) - la structure de cout qui justifiait HighSpeed a l'epoque n'existe
+    # plus, l'anticrenelage ne coute plus qu'une fois par groupe, pas par triangle.
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $g.Clear([System.Drawing.Color]::FromArgb(245, 245, 245))
 
     # En dessous de ce seuil (en pixels carres), un triangle est de toute facon invisible sur une
