@@ -7,6 +7,26 @@ vérifié que l'AMS ne mélange que 3 couleurs à la fois, pas 4 — voir le REA
 
 ---
 
+## Fix : coins arrondis + marge (barre preview "toujours ultra moche", capture d'écran à l'appui), 23/10/2026
+
+Tomyn, capture d'écran envoyée après le fix du défilé continu : "c'est toujours ultra moche".
+Cette fois la capture montre clairement le vrai problème restant : une bande **rectangulaire**,
+collée **pile** contre le bas de la vignette, sans le moindre espace - alors que
+`$overlayProgression` (voir sa capture envoyée plus tôt) est une carte visiblement **flottante**,
+avec des coins arrondis et de l'air tout autour.
+
+Deux correctifs concrets :
+- Coins arrondis sur la carte via une `Region` GDI+ (nouvelle fonction `Definir-RegionArrondie`,
+  rayon 8px) - un simple `FormBorderStyle=None` ne les donne pas automatiquement sur ce type de
+  petite fenêtre (confirmé par la capture : coins bien carrés).
+- 4px d'espace vertical entre le bas de la vignette et le haut de la carte (au lieu d'être collée
+  dessus), et la carte elle-même agrandie (34 → 40px de haut, marges internes 4 → 8px) pour
+  respirer un peu plus, plus proche des proportions de `$overlayProgression`.
+
+Non vérifié visuellement (toujours pas de GDI+ sous Linux ici) - à tester par Tomyn.
+
+---
+
 ## Fix : remplacement du rebond par un défilé continu (barre preview "toujours ultra moche"), 23/10/2026
 
 Tomyn, une fois le blocage corrigé : "c'est bon mais elle est toujours ultra moche". Le va-et-vient

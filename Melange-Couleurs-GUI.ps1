@@ -6577,8 +6577,31 @@ Ajouter-ZoomApercu $pictureAvant "avant"
 # bande collee sous l'image. Cette fonction reconstruit exactement cette meme carte (sans les
 # boutons Pause/Annuler, pas d'action possible ici), reutilisee pour "avant" et "apres" plutot que
 # dupliquee deux fois.
+# 23/10/2026, Tomyn (avec capture d'ecran, apres le fix du rebond) : "c'est toujours ultra moche" -
+# la capture montre une bande RECTANGULAIRE, collee pile contre le bas de la vignette sans le
+# moindre espace. $overlayProgression, elle, est une carte visiblement flottante avec des coins
+# arrondis et de l'air tout autour (voir sa capture d'ecran envoyee plus tot par Tomyn). Deux
+# correctifs concrets ici : coins arrondis (via une Region GDI+, meme principe que
+# Definir-RegionArrondie ci-dessous) et un petit espace vertical (4px) entre la vignette et la
+# carte au lieu d'etre collee dessus (voir l'appel a PointToScreen dans Mettre-A-Jour-Apercu et
+# Redessiner-Apercu-AvecRotation, qui ajoute desormais ce decalage).
+function Definir-RegionArrondie([System.Windows.Forms.Control]$controle, [int]$rayon) {
+    $largeurCtrl = $controle.Width
+    $hauteurCtrl = $controle.Height
+    $diametre = $rayon * 2
+    $chemin = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $chemin.AddArc(0, 0, $diametre, $diametre, 180, 90)
+    $chemin.AddArc(($largeurCtrl - $diametre), 0, $diametre, $diametre, 270, 90)
+    $chemin.AddArc(($largeurCtrl - $diametre), ($hauteurCtrl - $diametre), $diametre, $diametre, 0, 90)
+    $chemin.AddArc(0, ($hauteurCtrl - $diametre), $diametre, $diametre, 90, 90)
+    $chemin.CloseFigure()
+    $controle.Region = New-Object System.Drawing.Region($chemin)
+}
+
 function Creer-CarteProgressionApercu([int]$largeur) {
-    $hauteurCarte = 34
+    # Carte un peu plus haute et mieux respiree qu'avant (34 -> 40px, marges 4 -> 8px) pour se
+    # rapprocher du "flottant, aere" de $overlayProgression plutot que d'une bande utilitaire.
+    $hauteurCarte = 40
     $overlay = New-Object System.Windows.Forms.Form
     $overlay.FormBorderStyle = "None"
     $overlay.ShowInTaskbar = $false
@@ -6589,24 +6612,25 @@ function Creer-CarteProgressionApercu([int]$largeur) {
     $overlay.MinimumSize = New-Object System.Drawing.Size(0, 0)
     $overlay.Size = New-Object System.Drawing.Size($largeur, $hauteurCarte)
     $overlay.BackColor = $THEME.FondBanniere
+    Definir-RegionArrondie $overlay 8
 
     $labelTitre = New-Object System.Windows.Forms.Label
     $labelTitre.Text = "Chargement de l'apercu..."
-    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $labelTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
     $labelTitre.ForeColor = [System.Drawing.Color]::White
     $labelTitre.BackColor = [System.Drawing.Color]::Transparent
     $labelTitre.TextAlign = "MiddleCenter"
-    $labelTitre.Location = New-Object System.Drawing.Point(4, 2)
-    $labelTitre.Size = New-Object System.Drawing.Size(($largeur - 8), 16)
+    $labelTitre.Location = New-Object System.Drawing.Point(8, 4)
+    $labelTitre.Size = New-Object System.Drawing.Size(($largeur - 16), 16)
     $overlay.Controls.Add($labelTitre)
 
     $piste = New-Object System.Windows.Forms.Panel
-    $piste.Location = New-Object System.Drawing.Point(4, 20)
-    $piste.Size = New-Object System.Drawing.Size(($largeur - 8), 8)
+    $piste.Location = New-Object System.Drawing.Point(8, 24)
+    $piste.Size = New-Object System.Drawing.Size(($largeur - 16), 8)
     $piste.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
     $overlay.Controls.Add($piste)
 
-    $largeurRemplissage = [Math]::Max(30, [int](($largeur - 8) * 0.25))
+    $largeurRemplissage = [Math]::Max(30, [int](($largeur - 16) * 0.25))
     $remplissage = New-Object System.Windows.Forms.Panel
     $remplissage.Location = New-Object System.Drawing.Point(0, 0)
     $remplissage.Size = New-Object System.Drawing.Size($largeurRemplissage, 8)
@@ -6891,7 +6915,7 @@ if (`$null -ne `$args[3] -and `$null -ne `$args[4]) {
             # tous les cas, l'auto-chargement comme un chargement manuel) corrige les deux situations
             # sans distinction de cas particulier, et gere en prime un deplacement de la fenetre
             # principale pendant un calcul (bonus, pas la cause initiale).
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, ($pictureBox.Height + 4))))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             # 23/10/2026, Tomyn (apres le fix du blocage) : "c'est bon mais elle est toujours ultra
@@ -7064,7 +7088,7 @@ $corpsFonctions
     $minuteur.Interval = 200
     $minuteur.Add_Tick({
         if ($overlayApercu) {
-            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, $pictureBox.Height)))
+            $pointEcran = $pictureBox.PointToScreen((New-Object System.Drawing.Point(0, ($pictureBox.Height + 4))))
             if ($overlayApercu.Location -ne $pointEcran) { $overlayApercu.Location = $pointEcran }
             $overlayApercu.BringToFront()
             $nouveauLeft = $remplissageApercu.Left + 8
